@@ -520,12 +520,9 @@ namespace ClipboardSyncWin
             try
             {
                 var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                var resName = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("clipboard-bt.ico"));
-                if (resName != null)
-                {
-                    using var stream = asm.GetManifestResourceStream(resName);
-                    if (stream != null) return new Icon(stream, new Size(16, 16));
-                }
+                var resName = "ClipboardSyncWin.clipboard-bt.ico";
+                using var stream = asm.GetManifestResourceStream(resName);
+                if (stream != null) return new Icon(stream, new Size(16, 16));
 
                 return SystemIcons.Application;
             }

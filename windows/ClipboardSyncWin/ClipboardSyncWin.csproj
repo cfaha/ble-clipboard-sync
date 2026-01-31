@@ -13,6 +13,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="assets\\clipboard-bt.ico" />
+    <EmbeddedResource Include="assets\\clipboard-bt.ico" LogicalName="ClipboardSyncWin.clipboard-bt.ico" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <AssemblyVersion>1.0.2.0</AssemblyVersion>
+    <FileVersion>1.0.2.0</FileVersion>
+    <Version>1.0.2</Version>
+  </PropertyGroup>
 </Project>
