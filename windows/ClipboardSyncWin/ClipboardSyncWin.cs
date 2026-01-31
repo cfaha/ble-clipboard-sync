@@ -521,9 +521,19 @@ namespace ClipboardSyncWin
             {
                 var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "clipboard-bt.png");
                 if (!File.Exists(path)) return null;
-                using var bmp = new Bitmap(path);
-                using var scaled = new Bitmap(bmp, new Size(16, 16));
-                return Icon.FromHandle(scaled.GetHicon());
+
+                using var src = new Bitmap(path);
+                using var scaled = new Bitmap(16, 16);
+                using (var g = Graphics.FromImage(scaled))
+                {
+                    g.Clear(Color.FromArgb(15, 23, 42)); // dark bg to avoid fully transparent icon
+                    g.DrawImage(src, new Rectangle(0, 0, 16, 16));
+                }
+
+                var icon = Icon.FromHandle(scaled.GetHicon());
+                var clone = (Icon)icon.Clone();
+                icon.Dispose();
+                return clone;
             }
             catch { return null; }
         }
