@@ -185,6 +185,53 @@ final class StatusCenter {
     }
 }
 
+// MARK: - Auto Launch
+enum AutoLaunchManager {
+    private static var label: String {
+        return Bundle.main.bundleIdentifier ?? "com.ble.clipboardsync"
+    }
+
+    private static var plistURL: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent("Library/LaunchAgents/\(label).plist")
+    }
+
+    static func isEnabled() -> Bool {
+        return FileManager.default.fileExists(atPath: plistURL.path)
+    }
+
+    static func setEnabled(_ enabled: Bool) {
+        if enabled {
+            createPlistIfNeeded()
+            runLaunchctl(["load", "-w", plistURL.path])
+        } else {
+            runLaunchctl(["unload", "-w", plistURL.path])
+            try? FileManager.default.removeItem(at: plistURL)
+        }
+    }
+
+    private static func createPlistIfNeeded() {
+        let dir = plistURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard let exec = Bundle.main.executablePath else { return }
+        let plist: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": [exec],
+            "RunAtLoad": true
+        ]
+        guard let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) else { return }
+        try? data.write(to: plistURL)
+    }
+
+    private static func runLaunchctl(_ args: [String]) {
+        let task = Process()
+        task.launchPath = "/bin/launchctl"
+        task.arguments = args
+        try? task.run()
+        task.waitUntilExit()
+    }
+}
+
 // MARK: - BLE Clipboard Peripheral (Mac)
 final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     private var peripheralManager: CBPeripheralManager!
@@ -565,6 +612,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusMenuItem: NSMenuItem!
     private var trustedMenuItem: NSMenuItem!
     private var trustedMenu: NSMenu!
+    private var autoStartMenuItem: NSMenuItem!
     private var peripheral: ClipboardPeripheral?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -580,6 +628,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         trustedMenu = NSMenu()
         trustedMenuItem.submenu = trustedMenu
         menu.addItem(trustedMenuItem)
+
+        autoStartMenuItem = NSMenuItem(title: "开机自启", action: #selector(toggleAutoStart), keyEquivalent: "")
+        autoStartMenuItem.target = self
+        autoStartMenuItem.state = AutoLaunchManager.isEnabled() ? .on : .off
+        menu.addItem(autoStartMenuItem)
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
@@ -631,6 +684,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearTrustedDevices() {
         DeviceTrustCenter.shared.clear()
+    }
+
+    @objc private func toggleAutoStart() {
+        let enable = autoStartMenuItem.state != .on
+        AutoLaunchManager.setEnabled(enable)
+        autoStartMenuItem.state = AutoLaunchManager.isEnabled() ? .on : .off
     }
 
     @objc private func quitApp() {

@@ -15,6 +15,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Windows.Forms;
 using System.Drawing;
+using Microsoft.Win32;
 
 namespace ClipboardSyncWin
 {
@@ -198,6 +199,7 @@ namespace ClipboardSyncWin
         private readonly NotifyIcon _notifyIcon;
         private readonly ToolStripMenuItem _statusItem;
         private readonly ToolStripMenuItem _trustedMenuItem;
+        private readonly ToolStripMenuItem _autoStartItem;
         private readonly SynchronizationContext _syncContext;
 
         public TrayAppContext()
@@ -207,10 +209,14 @@ namespace ClipboardSyncWin
             _statusItem = new ToolStripMenuItem("Status: starting…") { Enabled = false };
             _trustedMenuItem = new ToolStripMenuItem("受信任设备");
             _trustedMenuItem.DropDownOpening += (_, __) => RefreshTrustedMenu();
+            _autoStartItem = new ToolStripMenuItem("开机自启") { CheckOnClick = true };
+            _autoStartItem.Checked = AutoStartManager.IsEnabled();
+            _autoStartItem.Click += (_, __) => ToggleAutoStart();
             var quitItem = new ToolStripMenuItem("Quit");
             quitItem.Click += (_, __) => ExitThread();
             menu.Items.Add(_statusItem);
             menu.Items.Add(_trustedMenuItem);
+            menu.Items.Add(_autoStartItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(quitItem);
 
@@ -275,6 +281,19 @@ namespace ClipboardSyncWin
                 Update();
             else
                 _syncContext.Post(_ => Update(), null);
+        }
+
+        private void ToggleAutoStart()
+        {
+            try
+            {
+                AutoStartManager.SetEnabled(_autoStartItem.Checked);
+                _autoStartItem.Checked = AutoStartManager.IsEnabled();
+            }
+            catch
+            {
+                _autoStartItem.Checked = AutoStartManager.IsEnabled();
+            }
         }
 
         protected override void ExitThreadCore()
@@ -385,6 +404,36 @@ namespace ClipboardSyncWin
         public static ulong DeviceId => DeviceIdProvider.GetOrCreate();
         public const string SharedKeyBase64 = "REPLACE_WITH_BASE64_KEY";
         public const int CompressionThreshold = 256;
+    }
+
+    static class AutoStartManager
+    {
+        private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        private const string ValueName = "BLEClipboardSync";
+
+        public static bool IsEnabled()
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey, false);
+            if (key == null) return false;
+            var value = key.GetValue(ValueName) as string;
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            var exe = Application.ExecutablePath;
+            return value.IndexOf(exe, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        public static void SetEnabled(bool enabled)
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey, true) ?? Registry.CurrentUser.CreateSubKey(RunKey);
+            if (key == null) return;
+            if (enabled)
+            {
+                key.SetValue(ValueName, $"\"{Application.ExecutablePath}\"");
+            }
+            else
+            {
+                key.DeleteValue(ValueName, false);
+            }
+        }
     }
 
     static class DeviceIdProvider
