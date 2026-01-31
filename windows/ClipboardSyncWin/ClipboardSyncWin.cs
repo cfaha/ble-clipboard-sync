@@ -131,8 +131,8 @@ namespace ClipboardSyncWin
                             var payload = new byte[2 + nameBytes.Length + bytes.Length];
                             payload[0] = (byte)(nameBytes.Length >> 8);
                             payload[1] = (byte)(nameBytes.Length & 0xff);
-                            Buffer.BlockCopy(nameBytes, 0, payload, 2, nameBytes.Length);
-                            Buffer.BlockCopy(bytes, 0, payload, 2 + nameBytes.Length, bytes.Length);
+                            System.Buffer.BlockCopy(nameBytes, 0, payload, 2, nameBytes.Length);
+                            System.Buffer.BlockCopy(bytes, 0, payload, 2 + nameBytes.Length, bytes.Length);
                             var hash = CryptoHelper.Sha256(payload);
                             if (LoopState.ShouldSkip(hash)) return;
                             await SendFramesAsync(ProtocolEncoder.Encode(0x03, payload));
@@ -223,9 +223,9 @@ namespace ClipboardSyncWin
             using var aes = new AesGcm(key);
             aes.Encrypt(nonce, data, cipher, tag, aad);
             var outBuf = new byte[nonce.Length + cipher.Length + tag.Length];
-            Buffer.BlockCopy(nonce, 0, outBuf, 0, nonce.Length);
-            Buffer.BlockCopy(cipher, 0, outBuf, nonce.Length, cipher.Length);
-            Buffer.BlockCopy(tag, 0, outBuf, nonce.Length + cipher.Length, tag.Length);
+            System.Buffer.BlockCopy(nonce, 0, outBuf, 0, nonce.Length);
+            System.Buffer.BlockCopy(cipher, 0, outBuf, nonce.Length, cipher.Length);
+            System.Buffer.BlockCopy(tag, 0, outBuf, nonce.Length + cipher.Length, tag.Length);
             return outBuf;
         }
 
@@ -236,9 +236,9 @@ namespace ClipboardSyncWin
             var nonce = new byte[12];
             var tag = new byte[16];
             var cipher = new byte[data.Length - 12 - 16];
-            Buffer.BlockCopy(data, 0, nonce, 0, 12);
-            Buffer.BlockCopy(data, 12, cipher, 0, cipher.Length);
-            Buffer.BlockCopy(data, 12 + cipher.Length, tag, 0, 16);
+            System.Buffer.BlockCopy(data, 0, nonce, 0, 12);
+            System.Buffer.BlockCopy(data, 12, cipher, 0, cipher.Length);
+            System.Buffer.BlockCopy(data, 12 + cipher.Length, tag, 0, 16);
             var plain = new byte[cipher.Length];
             using var aes = new AesGcm(key);
             try
@@ -367,7 +367,7 @@ namespace ClipboardSyncWin
             uint senderId = (uint)(body[0] << 24 | body[1] << 16 | body[2] << 8 | body[3]);
             if (senderId == SyncConfig.DeviceId) return;
             var content = new byte[body.Length - 4];
-            Buffer.BlockCopy(body, 4, content, 0, content.Length);
+            System.Buffer.BlockCopy(body, 4, content, 0, content.Length);
             var hash = CryptoHelper.Sha256(content);
 
             if (type == 0x01)
@@ -398,7 +398,7 @@ namespace ClipboardSyncWin
                 if (content.Length < 2 + nameLen) return;
                 var name = Encoding.UTF8.GetString(content, 2, nameLen);
                 var fileData = new byte[content.Length - 2 - nameLen];
-                Buffer.BlockCopy(content, 2 + nameLen, fileData, 0, fileData.Length);
+                System.Buffer.BlockCopy(content, 2 + nameLen, fileData, 0, fileData.Length);
 
                 var file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(name, CreationCollisionOption.ReplaceExisting);
                 await FileIO.WriteBytesAsync(file, fileData);
@@ -437,7 +437,7 @@ namespace ClipboardSyncWin
             }
 
             var payload = new byte[len];
-            Buffer.BlockCopy(frame, 8, payload, 0, len);
+            System.Buffer.BlockCopy(frame, 8, payload, 0, len);
             _chunks[seq] = payload;
 
             if (_chunks.Count == total)
