@@ -441,8 +441,14 @@ namespace ClipboardSyncWin
 
     static class TrayIconFactory
     {
+        private static Icon _baseIcon;
+
         public static Icon FromState(AppStatus.State state)
         {
+            var baseIcon = _baseIcon ??= LoadBaseIcon();
+            if (baseIcon != null)
+                return baseIcon;
+
             Color color = state switch
             {
                 AppStatus.State.Encrypted => Color.FromArgb(34, 197, 94),
@@ -451,6 +457,19 @@ namespace ClipboardSyncWin
                 _ => Color.FromArgb(148, 163, 184)
             };
             return MakeDotIcon(color);
+        }
+
+        private static Icon LoadBaseIcon()
+        {
+            try
+            {
+                var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "clipboard-bt.png");
+                if (!File.Exists(path)) return null;
+                using var bmp = new Bitmap(path);
+                using var scaled = new Bitmap(bmp, new Size(16, 16));
+                return Icon.FromHandle(scaled.GetHicon());
+            }
+            catch { return null; }
         }
 
         private static Icon MakeDotIcon(Color color)
