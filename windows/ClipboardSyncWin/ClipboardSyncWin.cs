@@ -519,6 +519,12 @@ namespace ClipboardSyncWin
         {
             try
             {
+                var icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "clipboard-bt.ico");
+                if (File.Exists(icoPath))
+                {
+                    return new Icon(icoPath);
+                }
+
                 var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "clipboard-bt.png");
                 if (!File.Exists(path)) return null;
 
@@ -526,7 +532,7 @@ namespace ClipboardSyncWin
                 using var scaled = new Bitmap(16, 16);
                 using (var g = Graphics.FromImage(scaled))
                 {
-                    g.Clear(Color.FromArgb(15, 23, 42)); // dark bg to avoid fully transparent icon
+                    g.Clear(Color.FromArgb(15, 23, 42));
                     g.DrawImage(src, new Rectangle(0, 0, 16, 16));
                 }
 
