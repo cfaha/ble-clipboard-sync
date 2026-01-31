@@ -14,6 +14,7 @@
 - **托盘/菜单栏**：Windows 通知区域与 macOS 菜单栏显示连接/加密状态，支持退出
 - **开机自启（可选）**：Windows 使用 HKCU Run，macOS 使用 LaunchAgent，可在托盘/菜单栏一键开关
 - **设备信任（白名单）**：首次接收到新设备会弹窗确认，信任后持久化，可在托盘/菜单栏查看并移除
+- **设备别名**：可在托盘/菜单栏重命名已信任设备，提示与列表显示别名（持久化）
 
 ## 传输协议（CBCLP v2）
 - 消息帧：`[type:1][flags:1][seq:2][total:2][len:2][payload:len]`
@@ -46,7 +47,7 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 3. 配置 `SyncConfig.sharedKeyBase64`
 4. 启用蓝牙权限（Info.plist 添加 `NSBluetoothAlwaysUsageDescription`）
 5. 运行后会出现在菜单栏（状态：未连接 / 已连接 / 已连接·已加密 / 传输中），首次连接会弹出“是否信任此设备”提示，开始广播（DeviceId 将自动生成并持久化）
-6. 首次接收到新设备会弹窗询问是否信任；可在菜单栏「受信任设备」中查看/移除
+6. 首次接收到新设备会弹窗询问是否信任；可在菜单栏「受信任设备」中查看/移除/重命名
 7. 可在菜单栏勾选「开机自启」启用 LaunchAgent
 
 #### macOS 打包流程（本地）
@@ -68,7 +69,7 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 2. 将 `ClipboardSyncWin.cs` 复制到工程
 3. 配置 `SyncConfig.SharedKeyBase64`
 4. 运行后会在通知区域显示图标（状态：未连接 / 已连接 / 已连接·已加密 / 传输中），首次连接会弹出“是否信任此设备”提示，扫描并连接名为 `BLEClipboardSync` 的外设（DeviceId 自动生成并持久化）
-5. 首次接收到新设备会弹窗询问是否信任；可在托盘图标菜单「受信任设备」中查看/移除
+5. 首次接收到新设备会弹窗询问是否信任；可在托盘图标菜单「受信任设备」中查看/移除/重命名
 6. 可在托盘菜单勾选「开机自启」启用 HKCU Run
 
 ### 配置说明

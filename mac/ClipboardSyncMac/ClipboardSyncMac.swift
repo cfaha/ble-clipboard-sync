@@ -53,7 +53,9 @@ final class LoopState {
 final class DeviceTrustCenter {
     static let shared = DeviceTrustCenter()
     private let key = "BLEClipboardTrustedDevices"
+    private let aliasKey = "BLEClipboardTrustedDeviceAliases"
     private var trusted: Set<UInt64> = []
+    private var aliases: [UInt64: String] = [:]
     private var allowNextUnknown = false
     var onChange: (() -> Void)?
 
@@ -78,13 +80,38 @@ final class DeviceTrustCenter {
     func remove(_ id: UInt64) {
         guard trusted.contains(id) else { return }
         trusted.remove(id)
+        aliases.removeValue(forKey: id)
         save()
     }
 
     func clear() {
         guard !trusted.isEmpty else { return }
         trusted.removeAll()
+        aliases.removeAll()
         save()
+    }
+
+    func alias(for id: UInt64) -> String? {
+        return aliases[id]
+    }
+
+    func setAlias(_ id: UInt64, alias: String?) {
+        let trimmed = alias?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            if aliases.removeValue(forKey: id) != nil { save() }
+            return
+        }
+        if aliases[id] != trimmed {
+            aliases[id] = trimmed
+            save()
+        }
+    }
+
+    func displayName(_ id: UInt64) -> String {
+        if let alias = aliases[id], !alias.isEmpty {
+            return "\(alias) (\(DeviceTrustCenter.format(id)))"
+        }
+        return DeviceTrustCenter.format(id)
     }
 
     func ensureTrusted(_ id: UInt64) -> Bool {
@@ -124,12 +151,29 @@ final class DeviceTrustCenter {
         if let list = defaults.array(forKey: key) as? [String] {
             trusted = Set(list.compactMap { UInt64($0) })
         }
+        if let dict = defaults.dictionary(forKey: aliasKey) as? [String: String] {
+            var mapped: [UInt64: String] = [:]
+            for (k, v) in dict {
+                if let id = UInt64(k), !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    mapped[id] = v
+                }
+            }
+            aliases = mapped
+        }
     }
 
     private func save() {
         let defaults = UserDefaults.standard
         let list = trusted.map { String($0) }
         defaults.set(list, forKey: key)
+        var dict: [String: String] = [:]
+        for (id, alias) in aliases {
+            let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                dict[String(id)] = trimmed
+            }
+        }
+        defaults.set(dict, forKey: aliasKey)
         onChange?()
     }
 
@@ -137,7 +181,7 @@ final class DeviceTrustCenter {
         let prompt = {
             let alert = NSAlert()
             alert.messageText = "信任此设备？"
-            alert.informativeText = "检测到新的设备 ID: \(DeviceTrustCenter.format(id))\n是否允许与其同步剪贴板？"
+            alert.informativeText = "检测到新的设备: \(displayName(id))\n是否允许与其同步剪贴板？"
             alert.addButton(withTitle: "信任")
             alert.addButton(withTitle: "拒绝")
             let response = alert.runModal()
@@ -731,10 +775,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             trustedMenu.addItem(empty)
         } else {
             for id in devices {
-                let item = NSMenuItem(title: DeviceTrustCenter.format(id), action: #selector(removeTrustedDevice(_:)), keyEquivalent: "")
-                item.representedObject = id
-                item.target = self
-                trustedMenu.addItem(item)
+                let deviceItem = NSMenuItem(title: DeviceTrustCenter.shared.displayName(id), action: nil, keyEquivalent: "")
+                let submenu = NSMenu()
+                let renameItem = NSMenuItem(title: "重命名…", action: #selector(renameTrustedDevice(_:)), keyEquivalent: "")
+                renameItem.representedObject = id
+                renameItem.target = self
+                submenu.addItem(renameItem)
+                let removeItem = NSMenuItem(title: "移除", action: #selector(removeTrustedDevice(_:)), keyEquivalent: "")
+                removeItem.representedObject = id
+                removeItem.target = self
+                submenu.addItem(removeItem)
+                deviceItem.submenu = submenu
+                trustedMenu.addItem(deviceItem)
             }
             trustedMenu.addItem(NSMenuItem.separator())
             trustedMenu.addItem(NSMenuItem(title: "清空列表", action: #selector(clearTrustedDevices), keyEquivalent: ""))
@@ -744,6 +796,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func removeTrustedDevice(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? UInt64 {
             DeviceTrustCenter.shared.remove(id)
+        }
+    }
+
+    @objc private func renameTrustedDevice(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UInt64 else { return }
+        let alert = NSAlert()
+        alert.messageText = "重命名设备"
+        alert.informativeText = "设备: \(DeviceTrustCenter.shared.displayName(id))"
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        input.stringValue = DeviceTrustCenter.shared.alias(for: id) ?? ""
+        alert.accessoryView = input
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let newAlias = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            DeviceTrustCenter.shared.setAlias(id, alias: newAlias.isEmpty ? nil : newAlias)
         }
     }
 

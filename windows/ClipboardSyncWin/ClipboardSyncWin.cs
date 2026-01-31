@@ -283,9 +283,14 @@ namespace ClipboardSyncWin
 
                 foreach (var id in devices)
                 {
-                    var item = new ToolStripMenuItem(DeviceTrustManager.Format(id));
-                    item.Click += (_, __) => DeviceTrustManager.RemoveTrusted(id);
-                    _trustedMenuItem.DropDownItems.Add(item);
+                    var deviceItem = new ToolStripMenuItem(DeviceTrustManager.DisplayName(id));
+                    var renameItem = new ToolStripMenuItem("重命名…");
+                    renameItem.Click += (_, __) => RenameTrustedDevice(id);
+                    var removeItem = new ToolStripMenuItem("移除");
+                    removeItem.Click += (_, __) => DeviceTrustManager.RemoveTrusted(id);
+                    deviceItem.DropDownItems.Add(renameItem);
+                    deviceItem.DropDownItems.Add(removeItem);
+                    _trustedMenuItem.DropDownItems.Add(deviceItem);
                 }
                 _trustedMenuItem.DropDownItems.Add(new ToolStripSeparator());
                 var clear = new ToolStripMenuItem("清空列表");
@@ -297,6 +302,13 @@ namespace ClipboardSyncWin
                 Update();
             else
                 _syncContext.Post(_ => Update(), null);
+        }
+
+        private void RenameTrustedDevice(ulong id)
+        {
+            var current = DeviceTrustManager.GetAlias(id) ?? string.Empty;
+            if (!AliasPrompt.TryGetAlias("重命名设备", "设备别名：", current, out var alias)) return;
+            DeviceTrustManager.SetAlias(id, alias);
         }
 
         private void ToggleAutoStart()
@@ -333,6 +345,50 @@ namespace ClipboardSyncWin
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             base.ExitThreadCore();
+        }
+    }
+
+    static class AliasPrompt
+    {
+        public static bool TryGetAlias(string title, string label, string initialValue, out string alias)
+        {
+            alias = initialValue ?? string.Empty;
+            using var form = new Form();
+            using var textBox = new TextBox();
+            using var labelControl = new Label();
+            using var buttonOk = new Button();
+            using var buttonCancel = new Button();
+
+            form.Text = title;
+            form.FormBorderStyle = FormBorderStyle.FixedDialog;
+            form.StartPosition = FormStartPosition.CenterScreen;
+            form.MinimizeBox = false;
+            form.MaximizeBox = false;
+            form.ClientSize = new Size(360, 120);
+            form.AcceptButton = buttonOk;
+            form.CancelButton = buttonCancel;
+
+            labelControl.Text = label;
+            labelControl.SetBounds(12, 12, 336, 20);
+
+            textBox.Text = initialValue ?? string.Empty;
+            textBox.SetBounds(12, 36, 336, 24);
+
+            buttonOk.Text = "保存";
+            buttonOk.DialogResult = DialogResult.OK;
+            buttonOk.SetBounds(188, 74, 75, 28);
+
+            buttonCancel.Text = "取消";
+            buttonCancel.DialogResult = DialogResult.Cancel;
+            buttonCancel.SetBounds(273, 74, 75, 28);
+
+            form.Controls.AddRange(new Control[] { labelControl, textBox, buttonOk, buttonCancel });
+
+            var result = form.ShowDialog();
+            if (result != DialogResult.OK) return false;
+
+            alias = textBox.Text;
+            return true;
         }
     }
 
@@ -557,19 +613,42 @@ namespace ClipboardSyncWin
         }
     }
 
+    class DeviceEntry
+    {
+        public string Id { get; set; }
+        public string Alias { get; set; }
+    }
+
     static class DeviceTrustStore
     {
         private static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipboardSyncWin");
         private static readonly string PathFile = System.IO.Path.Combine(Dir, "trusted.json");
-        private static readonly HashSet<ulong> Trusted = Load();
+        private static readonly Dictionary<ulong, string> Trusted = Load();
 
-        public static IEnumerable<ulong> All() => Trusted.OrderBy(x => x);
+        public static IEnumerable<ulong> All() => Trusted.Keys.OrderBy(x => x);
 
-        public static bool IsTrusted(ulong id) => Trusted.Contains(id);
+        public static bool IsTrusted(ulong id) => Trusted.ContainsKey(id);
+
+        public static string GetAlias(ulong id) => Trusted.TryGetValue(id, out var alias) ? alias : null;
 
         public static void Add(ulong id)
         {
-            if (Trusted.Add(id)) Save();
+            if (!Trusted.ContainsKey(id))
+            {
+                Trusted[id] = null;
+                Save();
+            }
+        }
+
+        public static void SetAlias(ulong id, string alias)
+        {
+            if (!Trusted.ContainsKey(id)) Trusted[id] = null;
+            var trimmed = string.IsNullOrWhiteSpace(alias) ? null : alias.Trim();
+            if (!Trusted.TryGetValue(id, out var current) || current != trimmed)
+            {
+                Trusted[id] = trimmed;
+                Save();
+            }
         }
 
         public static void Remove(ulong id)
@@ -584,26 +663,64 @@ namespace ClipboardSyncWin
             Save();
         }
 
-        private static HashSet<ulong> Load()
+        private static Dictionary<ulong, string> Load()
         {
             try
             {
-                if (!File.Exists(PathFile)) return new HashSet<ulong>();
+                if (!File.Exists(PathFile)) return new Dictionary<ulong, string>();
                 var json = File.ReadAllText(PathFile);
-                var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
-                return new HashSet<ulong>(list.Select(x => ulong.TryParse(x, out var v) ? v : 0).Where(x => x != 0));
+                try
+                {
+                    var entries = System.Text.Json.JsonSerializer.Deserialize<List<DeviceEntry>>(json);
+                    if (entries != null && entries.Count > 0)
+                    {
+                        var dict = new Dictionary<ulong, string>();
+                        foreach (var entry in entries)
+                        {
+                            if (entry == null || string.IsNullOrWhiteSpace(entry.Id)) continue;
+                            if (ulong.TryParse(entry.Id, out var id) && id != 0)
+                            {
+                                var alias = string.IsNullOrWhiteSpace(entry.Alias) ? null : entry.Alias.Trim();
+                                dict[id] = alias;
+                            }
+                        }
+                        return dict;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+                    var dict = new Dictionary<ulong, string>();
+                    foreach (var item in list)
+                    {
+                        if (ulong.TryParse(item, out var id) && id != 0)
+                        {
+                            dict[id] = null;
+                        }
+                    }
+                    return dict;
+                }
+                catch { }
+
+                return new Dictionary<ulong, string>();
             }
             catch
             {
-                return new HashSet<ulong>();
+                return new Dictionary<ulong, string>();
             }
         }
 
         private static void Save()
         {
             Directory.CreateDirectory(Dir);
-            var list = Trusted.Select(x => x.ToString()).ToList();
-            var json = System.Text.Json.JsonSerializer.Serialize(list);
+            var list = Trusted.OrderBy(x => x.Key).Select(x => new DeviceEntry
+            {
+                Id = x.Key.ToString(),
+                Alias = string.IsNullOrWhiteSpace(x.Value) ? null : x.Value
+            }).ToList();
+            var json = System.Text.Json.JsonSerializer.Serialize(list, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(PathFile, json);
             DeviceTrustManager.NotifyChanged();
         }
@@ -621,6 +738,17 @@ namespace ClipboardSyncWin
         }
 
         public static IEnumerable<ulong> AllTrusted() => DeviceTrustStore.All();
+
+        public static string GetAlias(ulong id) => DeviceTrustStore.GetAlias(id);
+
+        public static void SetAlias(ulong id, string alias) => DeviceTrustStore.SetAlias(id, alias);
+
+        public static string DisplayName(ulong id)
+        {
+            var alias = DeviceTrustStore.GetAlias(id);
+            if (!string.IsNullOrWhiteSpace(alias)) return $"{alias} ({Format(id)})";
+            return Format(id);
+        }
 
         public static bool EnsureTrusted(ulong id)
         {
@@ -640,7 +768,8 @@ namespace ClipboardSyncWin
             using var wait = new ManualResetEventSlim(false);
             void Prompt()
             {
-                var msg = $"检测到新连接: {address:X}\n是否允许后续剪贴板同步？";
+                var msg = $"检测到新连接: {address:X}
+是否允许后续剪贴板同步？";
                 var result = MessageBox.Show(msg, "允许此设备连接？", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 allowed = (result == DialogResult.Yes);
                 wait.Set();
@@ -664,7 +793,8 @@ namespace ClipboardSyncWin
             using var wait = new ManualResetEventSlim(false);
             void Prompt()
             {
-                var msg = $"检测到新的设备 ID: {Format(id)}\n是否允许与其同步剪贴板？";
+                var msg = $"检测到新的设备: {DisplayName(id)}
+是否允许与其同步剪贴板？";
                 var result = MessageBox.Show(msg, "信任此设备？", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (result == DialogResult.Yes)
                 {
