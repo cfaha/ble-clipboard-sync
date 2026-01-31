@@ -160,6 +160,7 @@ namespace ClipboardSyncWin
 
         private static async Task SendFramesAsync(IEnumerable<byte[]> frames)
         {
+            AppStatus.BumpTransfer();
             foreach (var frame in frames)
             {
                 var writer = new DataWriter();
@@ -207,11 +208,11 @@ namespace ClipboardSyncWin
             AppStatus.OnStatusChanged += OnStatusChanged;
         }
 
-        private void OnStatusChanged(string status)
+        private void OnStatusChanged(AppStatus.State state, string status)
         {
             _syncContext.Post(_ =>
             {
-                _statusItem.Text = $"Status: {status}";
+                _statusItem.Text = $"状态: {status}";
                 var baseText = "BLE Clipboard Sync";
                 var combined = $"{baseText} ({status})";
                 if (combined.Length > 63)
@@ -220,6 +221,7 @@ namespace ClipboardSyncWin
                     combined = available > 0 ? $"{baseText} ({status.Substring(0, available)})" : baseText;
                 }
                 _notifyIcon.Text = combined;
+                _notifyIcon.Icon = TrayIconFactory.FromState(state);
             }, null);
         }
 
@@ -234,33 +236,94 @@ namespace ClipboardSyncWin
 
     static class AppStatus
     {
+        public enum State { Disconnected, Connected, Encrypted, Transferring }
+
         private static bool _connected;
         private static bool _encrypted;
-        public static event Action<string>? OnStatusChanged;
+        private static State _state = State.Disconnected;
+        private static State _lastStable = State.Disconnected;
+        private static Timer _timer;
+
+        public static event Action<State, string>? OnStatusChanged;
 
         public static void Initialize()
         {
             _encrypted = CryptoHelper.HasKey;
-            Emit();
+            SetConnected(false);
         }
 
         public static void SetConnected(bool connected)
         {
             _connected = connected;
-            Emit();
+            UpdateStable();
         }
 
         public static void SetEncryptionAvailable(bool encrypted)
         {
             _encrypted = encrypted;
+            UpdateStable();
+        }
+
+        public static void BumpTransfer()
+        {
+            _state = State.Transferring;
+            Emit();
+            _timer?.Dispose();
+            _timer = new Timer(_ =>
+            {
+                _state = _lastStable;
+                Emit();
+            }, null, 1000, Timeout.Infinite);
+        }
+
+        private static void UpdateStable()
+        {
+            if (!_connected)
+                _lastStable = State.Disconnected;
+            else
+                _lastStable = _encrypted ? State.Encrypted : State.Connected;
+
+            _state = _lastStable;
             Emit();
         }
 
         private static void Emit()
         {
-            var status = _connected ? "Connected" : "Disconnected";
-            status += _encrypted ? " • Encrypted" : " • Unencrypted";
-            OnStatusChanged?.Invoke(status);
+            var status = _state switch
+            {
+                State.Disconnected => "未连接",
+                State.Connected => "已连接",
+                State.Encrypted => "已连接·已加密",
+                State.Transferring => "传输中",
+                _ => "未知"
+            };
+            OnStatusChanged?.Invoke(_state, status);
+        }
+    }
+
+    static class TrayIconFactory
+    {
+        public static Icon FromState(AppStatus.State state)
+        {
+            Color color = state switch
+            {
+                AppStatus.State.Encrypted => Color.FromArgb(34, 197, 94),
+                AppStatus.State.Connected => Color.FromArgb(59, 130, 246),
+                AppStatus.State.Transferring => Color.FromArgb(245, 158, 11),
+                _ => Color.FromArgb(148, 163, 184)
+            };
+            return MakeDotIcon(color);
+        }
+
+        private static Icon MakeDotIcon(Color color)
+        {
+            using var bmp = new Bitmap(16, 16);
+            using var g = Graphics.FromImage(bmp);
+            g.Clear(Color.Transparent);
+            using var brush = new SolidBrush(color);
+            g.FillEllipse(brush, 2, 2, 12, 12);
+            var hIcon = bmp.GetHicon();
+            return Icon.FromHandle(hIcon);
         }
     }
 
@@ -517,6 +580,7 @@ namespace ClipboardSyncWin
             var content = new byte[body.Length - 8];
             System.Buffer.BlockCopy(body, 8, content, 0, content.Length);
             var hash = CryptoHelper.Sha256(content);
+            AppStatus.BumpTransfer();
 
             if (type == 0x01)
             {

@@ -43,7 +43,7 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 2. 将 `ClipboardSyncMac.swift` 复制到工程
 3. 配置 `SyncConfig.sharedKeyBase64`
 4. 启用蓝牙权限（Info.plist 添加 `NSBluetoothAlwaysUsageDescription`）
-5. 运行后会出现在菜单栏（Status: Connected/Encrypted），开始广播（DeviceId 将自动生成并持久化）
+5. 运行后会出现在菜单栏（状态：未连接 / 已连接 / 已连接·已加密 / 传输中），开始广播（DeviceId 将自动生成并持久化）
 
 #### macOS 打包流程（本地）
 > 想“可直接运行”，建议签名 + notarize。
@@ -63,7 +63,7 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 1. 打开 `windows/ClipboardSyncWin` 用 Visual Studio 创建 **WinForms/WPF 项目（需要通知栏图标）**
 2. 将 `ClipboardSyncWin.cs` 复制到工程
 3. 配置 `SyncConfig.SharedKeyBase64`
-4. 运行后会在通知区域显示图标（Status: Connected/Encrypted），扫描并连接名为 `BLEClipboardSync` 的外设（DeviceId 自动生成并持久化）
+4. 运行后会在通知区域显示图标（状态：未连接 / 已连接 / 已连接·已加密 / 传输中），扫描并连接名为 `BLEClipboardSync` 的外设（DeviceId 自动生成并持久化）
 
 ### 配置说明
 - `DeviceId`：8 字节设备 ID（Snowflake/64-bit），**自动生成并持久化**（用于回环防止）

@@ -49,29 +49,34 @@ final class LoopState {
     }
 }
 
-// MARK: - Status Center
+// MARK: - Status
 final class StatusCenter {
+    enum State: String {
+        case disconnected = "未连接"
+        case connected = "已连接"
+        case encrypted = "已连接·已加密"
+        case transferring = "传输中"
+    }
+
     static let shared = StatusCenter()
-    private init() {}
+    private var state: State = .disconnected
+    private var lastStable: State = .disconnected
+    private var resetTimer: Timer?
 
-    var isConnected: Bool = false {
-        didSet { publish() }
+    var onUpdate: ((State) -> Void)?
+
+    func set(_ newState: State) {
+        state = newState
+        if newState != .transferring { lastStable = newState }
+        onUpdate?(state)
     }
 
-    var isEncrypted: Bool = (CryptoHelper.key != nil) {
-        didSet { publish() }
-    }
-
-    var onUpdate: ((String) -> Void)?
-
-    func statusText() -> String {
-        let conn = isConnected ? "Connected" : "Disconnected"
-        let enc = isEncrypted ? "Encrypted" : "Unencrypted"
-        return "\(conn) • \(enc)"
-    }
-
-    func publish() {
-        onUpdate?(statusText())
+    func bumpTransfer() {
+        set(.transferring)
+        resetTimer?.invalidate()
+        resetTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+            self.set(self.lastStable)
+        }
     }
 }
 
@@ -84,15 +89,14 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     override init() {
         super.init()
-        StatusCenter.shared.isEncrypted = (CryptoHelper.key != nil)
-        StatusCenter.shared.isConnected = false
+        StatusCenter.shared.set(.disconnected)
         peripheralManager = CBPeripheralManager(delegate: self, queue: nil)
         startClipboardMonitor()
     }
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         guard peripheral.state == .poweredOn else {
-            StatusCenter.shared.isConnected = false
+            StatusCenter.shared.set(.disconnected)
             return
         }
         setupService()
@@ -122,6 +126,18 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             CBAdvertisementDataLocalNameKey: "BLEClipboardSync",
             CBAdvertisementDataServiceUUIDsKey: [serviceUUID]
         ])
+    }
+
+    func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
+        if CryptoHelper.key != nil {
+            StatusCenter.shared.set(.encrypted)
+        } else {
+            StatusCenter.shared.set(.connected)
+        }
+    }
+
+    func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
+        StatusCenter.shared.set(.disconnected)
     }
 
     // MARK: - Clipboard Monitor
@@ -178,18 +194,13 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     private func sendFrames(_ frames: [Data]) {
+        StatusCenter.shared.bumpTransfer()
         for frame in frames {
             _ = peripheralManager.updateValue(frame, for: notifyChar, onSubscribedCentrals: nil)
         }
     }
 
-    func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
-        StatusCenter.shared.isConnected = true
-    }
-
-    func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
-        StatusCenter.shared.isConnected = false
-    }
+    // subscription callbacks handled above
 
     // MARK: - Receive from Windows
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
@@ -408,6 +419,7 @@ struct ProtocolDecoder {
         if senderId == SyncConfig.deviceId { return }
         let content = body.subdata(in: 8..<body.count)
         let hash = CryptoHelper.sha256(content)
+        StatusCenter.shared.bumpTransfer()
 
         switch type {
         case 0x01:
@@ -458,11 +470,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         statusItem.menu = menu
 
-        StatusCenter.shared.onUpdate = { [weak self] status in
-            self?.statusMenuItem.title = "Status: \(status)"
+        StatusCenter.shared.onUpdate = { [weak self] state in
+            let status = state.rawValue
+            self?.statusMenuItem.title = "状态: \(status)"
             self?.statusItem.button?.toolTip = status
         }
-        StatusCenter.shared.publish()
+        StatusCenter.shared.set(.disconnected)
 
         peripheral = ClipboardPeripheral()
     }
