@@ -214,7 +214,7 @@ namespace ClipboardSyncWin
         private readonly ToolStripMenuItem _trustedMenuItem;
         private readonly ToolStripMenuItem _autoStartItem;
         private readonly SynchronizationContext _syncContext;
-        private readonly System.Windows.Forms.Timer _iconTimer;
+        private int _iconRetries = 0;
 
         public TrayAppContext()
         {
@@ -245,13 +245,18 @@ namespace ClipboardSyncWin
                 Visible = true
             };
 
-            _iconTimer = new System.Windows.Forms.Timer { Interval = 3000 };
-            _iconTimer.Tick += (_, __) =>
+            _notifyIcon.Icon = TrayIconFactory.FromState(AppStatus.CurrentState);
+            _notifyIcon.Visible = true;
+            // retry a few times in case Explorer hasn't loaded tray yet
+            for (int i = 1; i <= 3; i++)
             {
-                _notifyIcon.Icon = TrayIconFactory.FromState(AppStatus.CurrentState);
-                _notifyIcon.Visible = true;
-            };
-            _iconTimer.Start();
+                var delay = i * 1000;
+                Task.Delay(delay).ContinueWith(_ =>
+                {
+                    _notifyIcon.Icon = TrayIconFactory.FromState(AppStatus.CurrentState);
+                    _notifyIcon.Visible = true;
+                });
+            }
 
             DeviceTrustManager.Initialize(_syncContext);
             DeviceTrustManager.OnChanged += RefreshTrustedMenu;
@@ -351,7 +356,6 @@ namespace ClipboardSyncWin
         {
             AppStatus.OnStatusChanged -= OnStatusChanged;
             DeviceTrustManager.OnChanged -= RefreshTrustedMenu;
-            _iconTimer.Stop();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             base.ExitThreadCore();
