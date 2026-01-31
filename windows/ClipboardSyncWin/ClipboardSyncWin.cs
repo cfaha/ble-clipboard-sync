@@ -768,8 +768,7 @@ namespace ClipboardSyncWin
             using var wait = new ManualResetEventSlim(false);
             void Prompt()
             {
-                var msg = $"检测到新连接: {address:X}
-是否允许后续剪贴板同步？";
+                var msg = $"检测到新连接: {address:X}\n是否允许后续剪贴板同步？";
                 var result = MessageBox.Show(msg, "允许此设备连接？", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 allowed = (result == DialogResult.Yes);
                 wait.Set();
@@ -793,8 +792,7 @@ namespace ClipboardSyncWin
             using var wait = new ManualResetEventSlim(false);
             void Prompt()
             {
-                var msg = $"检测到新的设备: {DisplayName(id)}
-是否允许与其同步剪贴板？";
+                var msg = $"检测到新的设备: {DisplayName(id)}\n是否允许与其同步剪贴板？";
                 var result = MessageBox.Show(msg, "信任此设备？", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (result == DialogResult.Yes)
                 {
