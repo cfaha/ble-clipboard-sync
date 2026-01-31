@@ -519,27 +519,15 @@ namespace ClipboardSyncWin
         {
             try
             {
-                var icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "clipboard-bt.ico");
-                if (File.Exists(icoPath))
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                var resName = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("clipboard-bt.ico"));
+                if (resName != null)
                 {
-                    return new Icon(icoPath, new Size(16, 16));
+                    using var stream = asm.GetManifestResourceStream(resName);
+                    if (stream != null) return new Icon(stream, new Size(16, 16));
                 }
 
-                var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "clipboard-bt.png");
-                if (!File.Exists(path)) return null;
-
-                using var src = new Bitmap(path);
-                using var scaled = new Bitmap(16, 16);
-                using (var g = Graphics.FromImage(scaled))
-                {
-                    g.Clear(Color.FromArgb(15, 23, 42));
-                    g.DrawImage(src, new Rectangle(0, 0, 16, 16));
-                }
-
-                var icon = Icon.FromHandle(scaled.GetHicon());
-                var clone = (Icon)icon.Clone();
-                icon.Dispose();
-                return clone;
+                return null;
             }
             catch { return null; }
         }

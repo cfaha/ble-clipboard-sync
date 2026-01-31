@@ -9,14 +9,10 @@
     <UseWindowsSDK>true</UseWindowsSDK>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <ApplicationIcon>assets\\clipboard-bt.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="assets\\clipboard-bt.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="assets\\clipboard-bt.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <EmbeddedResource Include="assets\\clipboard-bt.ico" />
   </ItemGroup>
 </Project>
