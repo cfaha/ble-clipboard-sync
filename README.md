@@ -40,6 +40,20 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 4. 启用蓝牙权限（Info.plist 添加 `NSBluetoothAlwaysUsageDescription`）
 5. 运行，开始广播
 
+#### macOS 打包流程（本地）
+> 想“可直接运行”，建议签名 + notarize。
+
+**A. 仅自己用（最省事）**
+1. Xcode 选择 **Product → Archive**
+2. Organizer → Distribute App → **Copy App**
+3. 得到 `.app`，双击运行；如被拦截，右键→打开
+
+**B. 对外分发（推荐）**
+1. 准备 Apple Developer 账号
+2. Xcode **Archive → Distribute App → Developer ID**
+3. 进行 **签名 + notarize**
+4. 产出 `.app` 或 `.dmg` 可直接分发
+
 ### Windows
 1. 打开 `windows/ClipboardSyncWin` 用 Visual Studio 创建 WPF/Console 项目
 2. 将 `ClipboardSyncWin.cs` 复制到工程
