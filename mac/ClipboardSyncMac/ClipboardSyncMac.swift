@@ -11,8 +11,20 @@ let writeCharUUID  = CBUUID(string: "A1B2C3D4-0002-1000-8000-00805F9B34FB")
 
 // MARK: - Config
 enum SyncConfig {
-    // 4-byte device id (must be unique per device)
-    static let deviceId: UInt32 = 0x00000001
+    // 4-byte device id (auto-generated & persisted per device)
+    static var deviceId: UInt32 = {
+        let key = "BLEClipboardDeviceId"
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: key), data.count == 4 {
+            return data.withUnsafeBytes { $0.load(as: UInt32.self) }
+        }
+        var value: UInt32 = 0
+        _ = SecRandomCopyBytes(kSecRandomDefault, 4, &value)
+        var v = value
+        let data = Data(bytes: &v, count: 4)
+        defaults.set(data, forKey: key)
+        return value
+    }()
 
     // 16/24/32-byte key, base64 encoded. Must match on both devices.
     static let sharedKeyBase64 = "REPLACE_WITH_BASE64_KEY"

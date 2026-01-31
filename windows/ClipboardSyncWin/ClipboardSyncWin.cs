@@ -167,9 +167,45 @@ namespace ClipboardSyncWin
 
     static class SyncConfig
     {
-        public const uint DeviceId = 0x00000002;
+        public static uint DeviceId => DeviceIdProvider.GetOrCreate();
         public const string SharedKeyBase64 = "REPLACE_WITH_BASE64_KEY";
         public const int CompressionThreshold = 256;
+    }
+
+    static class DeviceIdProvider
+    {
+        private static uint? _cached;
+        public static uint GetOrCreate()
+        {
+            if (_cached.HasValue) return _cached.Value;
+            try
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipboardSyncWin");
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, "device.id");
+                if (File.Exists(path))
+                {
+                    var bytes = File.ReadAllBytes(path);
+                    if (bytes.Length == 4)
+                    {
+                        _cached = BitConverter.ToUInt32(bytes, 0);
+                        return _cached.Value;
+                    }
+                }
+                var rnd = RandomNumberGenerator.GetBytes(4);
+                File.WriteAllBytes(path, rnd);
+                _cached = BitConverter.ToUInt32(rnd, 0);
+                return _cached.Value;
+            }
+            catch
+            {
+                // fallback: hash machine name
+                using var sha = SHA256.Create();
+                var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(Environment.MachineName));
+                _cached = BitConverter.ToUInt32(hash, 0);
+                return _cached.Value;
+            }
+        }
     }
 
     static class LoopState
