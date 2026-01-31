@@ -214,6 +214,7 @@ namespace ClipboardSyncWin
         private readonly ToolStripMenuItem _trustedMenuItem;
         private readonly ToolStripMenuItem _autoStartItem;
         private readonly SynchronizationContext _syncContext;
+        private readonly System.Windows.Forms.Timer _iconTimer;
 
         public TrayAppContext()
         {
@@ -238,11 +239,19 @@ namespace ClipboardSyncWin
 
             _notifyIcon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = TrayIconFactory.FromState(AppStatus.State.Disconnected),
                 Text = "BLE Clipboard Sync",
                 ContextMenuStrip = menu,
                 Visible = true
             };
+
+            _iconTimer = new System.Windows.Forms.Timer { Interval = 3000 };
+            _iconTimer.Tick += (_, __) =>
+            {
+                _notifyIcon.Icon = TrayIconFactory.FromState(AppStatus.CurrentState);
+                _notifyIcon.Visible = true;
+            };
+            _iconTimer.Start();
 
             DeviceTrustManager.Initialize(_syncContext);
             DeviceTrustManager.OnChanged += RefreshTrustedMenu;
@@ -342,6 +351,7 @@ namespace ClipboardSyncWin
         {
             AppStatus.OnStatusChanged -= OnStatusChanged;
             DeviceTrustManager.OnChanged -= RefreshTrustedMenu;
+            _iconTimer.Stop();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             base.ExitThreadCore();
@@ -439,6 +449,7 @@ namespace ClipboardSyncWin
         private static System.Threading.Timer _timer;
 
         public static event Action<State, string>? OnStatusChanged;
+        public static State CurrentState => _state;
 
         public static void Initialize()
         {
