@@ -77,6 +77,11 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 - `CompressionThreshold`：超过此长度才启用压缩
 - 状态栏/托盘中 **Encrypted/Unencrypted** 由 `SharedKeyBase64` 是否配置有效密钥决定
 
+### 日志导出
+- 菜单栏/托盘点击「导出日志」将写出当前内存日志缓冲区
+- macOS 日志路径：`~/Library/Logs/ClipboardSync/clipboard-sync-YYYYMMDD-HHMMSS.log`
+- Windows 日志路径：`%AppData%\ClipboardSyncWin\logs\clipboard-sync-YYYYMMDD-HHMMSS.log`
+
 ## 限制
 - BLE 带宽有限，大文件会比较慢
 - Windows 作为 BLE Peripheral 支持不稳定，因此推荐 **Mac 为外设，Windows 为中心**

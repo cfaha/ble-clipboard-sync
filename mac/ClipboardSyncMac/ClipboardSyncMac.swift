@@ -185,6 +185,57 @@ final class StatusCenter {
     }
 }
 
+// MARK: - Logs
+final class LogCenter {
+    static let shared = LogCenter()
+    private let queue = DispatchQueue(label: "LogCenter.queue")
+    private var buffer: [String] = []
+    private let maxLines = 1000
+
+    func log(_ message: String) {
+        let line = "\(LogCenter.timestamp()) \(message)"
+        queue.sync {
+            buffer.append(line)
+            if buffer.count > maxLines {
+                buffer.removeFirst(buffer.count - maxLines)
+            }
+        }
+        print(line)
+    }
+
+    func exportToFile() -> URL? {
+        let contents = queue.sync { buffer.joined(separator: "\n") }
+        let dir = LogCenter.logDirectory()
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let filename = "clipboard-sync-\(LogCenter.fileTimestamp()).log"
+            let url = dir.appendingPathComponent(filename)
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    static func logDirectory() -> URL {
+        let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        return base.appendingPathComponent("Logs/ClipboardSync", isDirectory: true)
+    }
+
+    private static func timestamp() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: Date())
+    }
+
+    private static func fileTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: Date())
+    }
+}
+
 // MARK: - Auto Launch
 enum AutoLaunchManager {
     private static var label: String {
@@ -241,12 +292,14 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     override init() {
         super.init()
+        LogCenter.shared.log("Peripheral init")
         StatusCenter.shared.set(.disconnected)
         peripheralManager = CBPeripheralManager(delegate: self, queue: nil)
         startClipboardMonitor()
     }
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
+        LogCenter.shared.log("Peripheral state: \(peripheral.state.rawValue)")
         guard peripheral.state == .poweredOn else {
             StatusCenter.shared.set(.disconnected)
             return
@@ -274,6 +327,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     private func startAdvertising() {
+        LogCenter.shared.log("Start advertising BLEClipboardSync")
         peripheralManager.startAdvertising([
             CBAdvertisementDataLocalNameKey: "BLEClipboardSync",
             CBAdvertisementDataServiceUUIDsKey: [serviceUUID]
@@ -281,6 +335,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
+        LogCenter.shared.log("Central subscribed: \(central.identifier.uuidString)")
         DeviceTrustCenter.shared.promptOnConnect(central.identifier)
         if CryptoHelper.key != nil {
             StatusCenter.shared.set(.encrypted)
@@ -290,6 +345,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
+        LogCenter.shared.log("Central unsubscribed: \(central.identifier.uuidString)")
         StatusCenter.shared.set(.disconnected)
     }
 
@@ -314,6 +370,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             let hash = CryptoHelper.sha256(payload)
             if LoopState.shouldSkip(hash: hash) { return }
             let frames = ProtocolEncoder.encode(type: 0x01, payload: payload)
+            LogCenter.shared.log("Send text: \(payload.count) bytes, \(frames.count) frames")
             sendFrames(frames)
             return
         }
@@ -324,6 +381,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             let hash = CryptoHelper.sha256(png)
             if LoopState.shouldSkip(hash: hash) { return }
             let frames = ProtocolEncoder.encode(type: 0x02, payload: png)
+            LogCenter.shared.log("Send image: \(png.count) bytes, \(frames.count) frames")
             sendFrames(frames)
             return
         }
@@ -341,6 +399,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             let hash = CryptoHelper.sha256(payload)
             if LoopState.shouldSkip(hash: hash) { return }
             let frames = ProtocolEncoder.encode(type: 0x03, payload: payload)
+            LogCenter.shared.log("Send file: \(payload.count) bytes, \(frames.count) frames, name=\(first.lastPathComponent)")
             sendFrames(frames)
             return
         }
@@ -574,6 +633,7 @@ struct ProtocolDecoder {
         let content = body.subdata(in: 8..<body.count)
         let hash = CryptoHelper.sha256(content)
         StatusCenter.shared.bumpTransfer()
+        LogCenter.shared.log("Received type=\(type), bytes=\(content.count)")
 
         switch type {
         case 0x01:
@@ -616,6 +676,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var peripheral: ClipboardPeripheral?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        LogCenter.shared.log("App launched")
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.title = "Clip"
 
@@ -633,6 +694,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoStartMenuItem.target = self
         autoStartMenuItem.state = AutoLaunchManager.isEnabled() ? .on : .off
         menu.addItem(autoStartMenuItem)
+
+        let exportLogItem = NSMenuItem(title: "导出日志", action: #selector(exportLogs), keyEquivalent: "")
+        exportLogItem.target = self
+        menu.addItem(exportLogItem)
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
@@ -690,6 +755,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let enable = autoStartMenuItem.state != .on
         AutoLaunchManager.setEnabled(enable)
         autoStartMenuItem.state = AutoLaunchManager.isEnabled() ? .on : .off
+    }
+
+    @objc private func exportLogs() {
+        let alert = NSAlert()
+        if let url = LogCenter.shared.exportToFile() {
+            alert.messageText = "日志已导出"
+            alert.informativeText = url.path
+            LogCenter.shared.log("Export logs to \(url.path)")
+        } else {
+            alert.messageText = "日志导出失败"
+            alert.informativeText = "无法写入日志文件"
+        }
+        alert.addButton(withTitle: "好的")
+        alert.runModal()
     }
 
     @objc private func quitApp() {

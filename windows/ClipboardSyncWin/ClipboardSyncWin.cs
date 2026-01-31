@@ -49,6 +49,7 @@ namespace ClipboardSyncWin
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            LogCenter.Log("App started");
             AppStatus.Initialize();
             StartScan();
 
@@ -62,6 +63,7 @@ namespace ClipboardSyncWin
         private static void StartScan()
         {
             AppStatus.SetConnected(false);
+            LogCenter.Log("Start BLE scan");
             _watcher?.Stop();
             _watcher = new BluetoothLEAdvertisementWatcher();
             _watcher.Received += async (w, evt) =>
@@ -69,7 +71,7 @@ namespace ClipboardSyncWin
                 if (evt.Advertisement.LocalName == "BLEClipboardSync")
                 {
                     _watcher.Stop();
-                    Console.WriteLine($"Found: {evt.BluetoothAddress}");
+                    LogCenter.Log($"Found device: {evt.BluetoothAddress:X}");
                     await ConnectAndSync(evt.BluetoothAddress);
                 }
             };
@@ -78,16 +80,21 @@ namespace ClipboardSyncWin
 
         private static async Task ConnectAndSync(ulong address)
         {
+            LogCenter.Log($"Connecting to {address:X}");
             _device?.Dispose();
             _device = await BluetoothLEDevice.FromBluetoothAddressAsync(address);
-            if (_device == null) return;
+            if (_device == null)
+            {
+                LogCenter.Log("Failed to connect: device null");
+                return;
+            }
             DeviceTrustManager.PromptOnConnect(address);
             _device.ConnectionStatusChanged += (s, e) =>
             {
                 if (_device.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
                 {
                     AppStatus.SetConnected(false);
-                    Console.WriteLine("Disconnected. Re-scanning...");
+                    LogCenter.Log("Disconnected. Re-scanning...");
                     StartScan();
                 }
             };
@@ -114,6 +121,7 @@ namespace ClipboardSyncWin
                 GattClientCharacteristicConfigurationDescriptorValue.Notify);
 
             AppStatus.SetConnected(true);
+            LogCenter.Log("Connected and subscribed to notifications");
 
             WinClipboard.ContentChanged += async (s, e) =>
             {
@@ -132,6 +140,7 @@ namespace ClipboardSyncWin
                         var payload = Encoding.UTF8.GetBytes(text ?? string.Empty);
                         var hash = CryptoHelper.Sha256(payload);
                         if (LoopState.ShouldSkip(hash)) return;
+                        LogCenter.Log($"Send text: {payload.Length} bytes");
                         await SendFramesAsync(ProtocolEncoder.Encode(0x01, payload));
                         return;
                     }
@@ -143,6 +152,7 @@ namespace ClipboardSyncWin
                             var bytes = await ReadAllAsync(stream);
                             var hash = CryptoHelper.Sha256(bytes);
                             if (LoopState.ShouldSkip(hash)) return;
+                            LogCenter.Log($"Send image: {bytes.Length} bytes");
                             await SendFramesAsync(ProtocolEncoder.Encode(0x02, bytes));
                             return;
                         }
@@ -163,6 +173,7 @@ namespace ClipboardSyncWin
                             System.Buffer.BlockCopy(bytes, 0, payload, 2 + nameBytes.Length, bytes.Length);
                             var hash = CryptoHelper.Sha256(payload);
                             if (LoopState.ShouldSkip(hash)) return;
+                            LogCenter.Log($"Send file: {payload.Length} bytes, name={file.Name}");
                             await SendFramesAsync(ProtocolEncoder.Encode(0x03, payload));
                             return;
                         }
@@ -175,7 +186,9 @@ namespace ClipboardSyncWin
         private static async Task SendFramesAsync(IEnumerable<byte[]> frames)
         {
             AppStatus.BumpTransfer();
-            foreach (var frame in frames)
+            var frameList = frames.ToList();
+            LogCenter.Log($"Send frames: {frameList.Count}");
+            foreach (var frame in frameList)
             {
                 var writer = new DataWriter();
                 writer.WriteBytes(frame);
@@ -212,11 +225,14 @@ namespace ClipboardSyncWin
             _autoStartItem = new ToolStripMenuItem("开机自启") { CheckOnClick = true };
             _autoStartItem.Checked = AutoStartManager.IsEnabled();
             _autoStartItem.Click += (_, __) => ToggleAutoStart();
+            var exportLogItem = new ToolStripMenuItem("导出日志");
+            exportLogItem.Click += (_, __) => ExportLogs();
             var quitItem = new ToolStripMenuItem("Quit");
             quitItem.Click += (_, __) => ExitThread();
             menu.Items.Add(_statusItem);
             menu.Items.Add(_trustedMenuItem);
             menu.Items.Add(_autoStartItem);
+            menu.Items.Add(exportLogItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(quitItem);
 
@@ -296,6 +312,20 @@ namespace ClipboardSyncWin
             }
         }
 
+        private void ExportLogs()
+        {
+            try
+            {
+                var path = LogCenter.ExportToFile();
+                LogCenter.Log($"Export logs to {path}");
+                MessageBox.Show($"日志已导出:\n{path}", "导出日志", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"日志导出失败: {ex.Message}", "导出日志", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         protected override void ExitThreadCore()
         {
             AppStatus.OnStatusChanged -= OnStatusChanged;
@@ -303,6 +333,42 @@ namespace ClipboardSyncWin
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             base.ExitThreadCore();
+        }
+    }
+
+    static class LogCenter
+    {
+        private static readonly object Locker = new object();
+        private static readonly List<string> Buffer = new List<string>();
+        private const int MaxLines = 1000;
+
+        public static void Log(string message)
+        {
+            var line = $"{DateTime.UtcNow:O} {message}";
+            lock (Locker)
+            {
+                Buffer.Add(line);
+                if (Buffer.Count > MaxLines)
+                {
+                    Buffer.RemoveRange(0, Buffer.Count - MaxLines);
+                }
+            }
+            try { Console.WriteLine(line); } catch { }
+        }
+
+        public static string ExportToFile()
+        {
+            string[] lines;
+            lock (Locker)
+            {
+                lines = Buffer.ToArray();
+            }
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipboardSyncWin", "logs");
+            Directory.CreateDirectory(dir);
+            var filename = $"clipboard-sync-{DateTime.Now:yyyyMMdd-HHmmss}.log";
+            var path = Path.Combine(dir, filename);
+            File.WriteAllLines(path, lines, Encoding.UTF8);
+            return path;
         }
     }
 
@@ -818,6 +884,7 @@ namespace ClipboardSyncWin
             System.Buffer.BlockCopy(body, 8, content, 0, content.Length);
             var hash = CryptoHelper.Sha256(content);
             AppStatus.BumpTransfer();
+            LogCenter.Log($"Received type={type}, bytes={content.Length}");
 
             if (type == 0x01)
             {
