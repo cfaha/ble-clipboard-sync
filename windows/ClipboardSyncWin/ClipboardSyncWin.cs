@@ -527,7 +527,7 @@ namespace ClipboardSyncWin
                     if (stream != null) return new Icon(stream, new Size(16, 16));
                 }
 
-                return null;
+                return SystemIcons.Application;
             }
             catch { return null; }
         }
