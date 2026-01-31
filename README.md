@@ -10,13 +10,21 @@
   - Windows 作为 **Central（中心设备）** 连接并订阅
 - **双向同步**：双方都可写入对方（两条特征：Notify / Write）
 - **自动重连**：Windows 断线后自动重新扫描连接
+- **安全与可靠**：AES-GCM 加密、可选压缩、设备 ID 回环防止
 
-## 传输协议（CBCLP v1）
+## 传输协议（CBCLP v2）
 - 消息帧：`[type:1][flags:1][seq:2][total:2][len:2][payload:len]`
 - type：`0x01=text` `0x02=image(png)` `0x03=file`
-- flags：`bit0=last` `bit1=compressed`
+- flags：`bit0=last` `bit1=compressed` `bit2=encrypted`
 - seq/total：分片序号
 - **file payload**：`[nameLen:2][nameUtf8][fileBytes]`
+
+### Payload 封装
+1. **原始内容**：`[senderId:4][content...]`
+2. **可选压缩**：若 `flags.bit1=1`，payload 变为 `[origLen:4][zlib(data)]`
+3. **可选加密**：若 `flags.bit2=1`，payload 变为 `nonce(12) + ciphertext + tag(16)`
+   - 算法：AES-GCM
+   - AAD：`[type, flags]`
 
 ## 目录结构
 ```
@@ -28,13 +36,20 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 ### macOS
 1. 打开 `mac/ClipboardSyncMac` 用 Xcode 创建 App（macOS App 或 Menu Bar App）
 2. 将 `ClipboardSyncMac.swift` 复制到工程
-3. 启用蓝牙权限（Info.plist 添加 `NSBluetoothAlwaysUsageDescription`）
-4. 运行，开始广播
+3. 配置 `SyncConfig.deviceId` 与 `SyncConfig.sharedKeyBase64`
+4. 启用蓝牙权限（Info.plist 添加 `NSBluetoothAlwaysUsageDescription`）
+5. 运行，开始广播
 
 ### Windows
 1. 打开 `windows/ClipboardSyncWin` 用 Visual Studio 创建 WPF/Console 项目
 2. 将 `ClipboardSyncWin.cs` 复制到工程
-3. 运行，扫描并连接名为 `BLEClipboardSync` 的外设
+3. 配置 `SyncConfig.DeviceId` 与 `SyncConfig.SharedKeyBase64`
+4. 运行，扫描并连接名为 `BLEClipboardSync` 的外设
+
+### 配置说明
+- `DeviceId`：4 字节设备 ID，**两端必须不同**（用于回环防止）
+- `SharedKeyBase64`：AES-GCM 密钥（16/24/32 字节，Base64 编码），**两端必须一致**
+- `CompressionThreshold`：超过此长度才启用压缩
 
 ## 限制
 - BLE 带宽有限，大文件会比较慢
@@ -43,8 +58,7 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 - Windows 设置图片剪贴板需用 `Bitmap`/`IRandomAccessStream` 包装
 
 ## 后续可扩展
-- 文件压缩/断点续传
-- 加密（AES-GCM）
+- 断点续传/重传窗口
 - 设备配对/白名单
 - 历史剪贴板
 
