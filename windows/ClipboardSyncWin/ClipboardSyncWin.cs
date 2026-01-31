@@ -15,7 +15,6 @@ using System.IO;
 using System.IO.Compression;
 using System.Windows.Forms;
 using System.Drawing;
-using System.Threading;
 
 namespace ClipboardSyncWin
 {
@@ -29,6 +28,8 @@ namespace ClipboardSyncWin
         private static BluetoothLEDevice _device;
         private static GattCharacteristic _notifyChar;
         private static GattCharacteristic _writeChar;
+
+        private static Windows.ApplicationModel.DataTransfer.Clipboard WinClipboard => Windows.ApplicationModel.DataTransfer.Clipboard;
 
         [STAThread]
         static void Main(string[] args)
@@ -102,7 +103,7 @@ namespace ClipboardSyncWin
 
             AppStatus.SetConnected(true);
 
-            Clipboard.ContentChanged += async (s, e) =>
+            WinClipboard.ContentChanged += async (s, e) =>
             {
                 if (LoopState.IgnoreNextChange)
                 {
@@ -112,7 +113,7 @@ namespace ClipboardSyncWin
 
                 try
                 {
-                    var content = Clipboard.GetContent();
+                    var content = WinClipboard.GetContent();
                     if (content.Contains(StandardDataFormats.Text))
                     {
                         var text = await content.GetTextAsync();
@@ -310,7 +311,7 @@ namespace ClipboardSyncWin
             _state = State.Transferring;
             Emit();
             _timer?.Dispose();
-            _timer = new Timer(_ =>
+            _timer = new System.Threading.Timer(_ =>
             {
                 _state = _lastStable;
                 Emit();
@@ -763,7 +764,7 @@ namespace ClipboardSyncWin
                 var text = Encoding.UTF8.GetString(content);
                 var dp = new DataPackage();
                 dp.SetText(text);
-                Clipboard.SetContent(dp);
+                WinClipboard.SetContent(dp);
                 LoopState.MarkReceived(hash);
             }
             else if (type == 0x02)
@@ -776,7 +777,7 @@ namespace ClipboardSyncWin
                 stream.Seek(0);
                 var dp = new DataPackage();
                 dp.SetBitmap(RandomAccessStreamReference.CreateFromStream(stream));
-                Clipboard.SetContent(dp);
+                WinClipboard.SetContent(dp);
                 LoopState.MarkReceived(hash);
             }
             else if (type == 0x03)
@@ -793,7 +794,7 @@ namespace ClipboardSyncWin
 
                 var dp = new DataPackage();
                 dp.SetStorageItems(new[] { file });
-                Clipboard.SetContent(dp);
+                WinClipboard.SetContent(dp);
                 LoopState.MarkReceived(hash);
             }
         }
