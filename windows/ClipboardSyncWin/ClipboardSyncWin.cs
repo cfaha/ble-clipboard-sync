@@ -68,6 +68,7 @@ namespace ClipboardSyncWin
             _device?.Dispose();
             _device = await BluetoothLEDevice.FromBluetoothAddressAsync(address);
             if (_device == null) return;
+            DeviceTrustManager.PromptOnConnect(address);
             _device.ConnectionStatusChanged += (s, e) =>
             {
                 if (_device.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
@@ -465,6 +466,7 @@ namespace ClipboardSyncWin
     static class DeviceTrustManager
     {
         private static SynchronizationContext _syncContext;
+        private static bool _allowNextUnknown = false;
         public static event Action? OnChanged;
 
         public static void Initialize(SynchronizationContext context)
@@ -477,7 +479,34 @@ namespace ClipboardSyncWin
         public static bool EnsureTrusted(ulong id)
         {
             if (DeviceTrustStore.IsTrusted(id)) return true;
+            if (_allowNextUnknown)
+            {
+                _allowNextUnknown = false;
+                DeviceTrustStore.Add(id);
+                return true;
+            }
             return PromptTrust(id);
+        }
+
+        public static void PromptOnConnect(ulong address)
+        {
+            bool allowed = false;
+            using var wait = new ManualResetEventSlim(false);
+            void Prompt()
+            {
+                var msg = $"检测到新连接: {address:X}\n是否允许后续剪贴板同步？";
+                var result = MessageBox.Show(msg, "允许此设备连接？", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                allowed = (result == DialogResult.Yes);
+                wait.Set();
+            }
+
+            if (_syncContext != null)
+                _syncContext.Post(_ => Prompt(), null);
+            else
+                Prompt();
+
+            wait.Wait();
+            _allowNextUnknown = allowed;
         }
 
         public static void RemoveTrusted(ulong id) => DeviceTrustStore.Remove(id);

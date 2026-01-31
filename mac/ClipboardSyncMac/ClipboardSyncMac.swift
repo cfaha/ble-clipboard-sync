@@ -54,6 +54,7 @@ final class DeviceTrustCenter {
     static let shared = DeviceTrustCenter()
     private let key = "BLEClipboardTrustedDevices"
     private var trusted: Set<UInt64> = []
+    private var allowNextUnknown = false
     var onChange: (() -> Void)?
 
     private init() {
@@ -88,9 +89,34 @@ final class DeviceTrustCenter {
 
     func ensureTrusted(_ id: UInt64) -> Bool {
         if isTrusted(id) { return true }
+        if allowNextUnknown {
+            allowNextUnknown = false
+            add(id)
+            return true
+        }
         let allowed = promptTrust(id)
         if allowed { add(id) }
         return allowed
+    }
+
+    func promptOnConnect(_ centralId: UUID) {
+        let prompt = {
+            let alert = NSAlert()
+            alert.messageText = "允许此设备连接？"
+            alert.informativeText = "检测到新连接: \(centralId.uuidString)\n是否允许后续剪贴板同步？"
+            alert.addButton(withTitle: "允许")
+            alert.addButton(withTitle: "拒绝")
+            let response = alert.runModal()
+            return response == .alertFirstButtonReturn
+        }
+        let allowed: Bool
+        if Thread.isMainThread { allowed = prompt() }
+        else {
+            var ok = false
+            DispatchQueue.main.sync { ok = prompt() }
+            allowed = ok
+        }
+        allowNextUnknown = allowed
     }
 
     private func load() {
@@ -208,6 +234,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
+        DeviceTrustCenter.shared.promptOnConnect(central.identifier)
         if CryptoHelper.key != nil {
             StatusCenter.shared.set(.encrypted)
         } else {
