@@ -49,6 +49,85 @@ final class LoopState {
     }
 }
 
+// MARK: - Device Trust
+final class DeviceTrustCenter {
+    static let shared = DeviceTrustCenter()
+    private let key = "BLEClipboardTrustedDevices"
+    private var trusted: Set<UInt64> = []
+    var onChange: (() -> Void)?
+
+    private init() {
+        load()
+    }
+
+    func isTrusted(_ id: UInt64) -> Bool {
+        return trusted.contains(id)
+    }
+
+    func allTrusted() -> [UInt64] {
+        return trusted.sorted()
+    }
+
+    func add(_ id: UInt64) {
+        guard !trusted.contains(id) else { return }
+        trusted.insert(id)
+        save()
+    }
+
+    func remove(_ id: UInt64) {
+        guard trusted.contains(id) else { return }
+        trusted.remove(id)
+        save()
+    }
+
+    func clear() {
+        guard !trusted.isEmpty else { return }
+        trusted.removeAll()
+        save()
+    }
+
+    func ensureTrusted(_ id: UInt64) -> Bool {
+        if isTrusted(id) { return true }
+        let allowed = promptTrust(id)
+        if allowed { add(id) }
+        return allowed
+    }
+
+    private func load() {
+        let defaults = UserDefaults.standard
+        if let list = defaults.array(forKey: key) as? [String] {
+            trusted = Set(list.compactMap { UInt64($0) })
+        }
+    }
+
+    private func save() {
+        let defaults = UserDefaults.standard
+        let list = trusted.map { String($0) }
+        defaults.set(list, forKey: key)
+        onChange?()
+    }
+
+    private func promptTrust(_ id: UInt64) -> Bool {
+        let prompt = {
+            let alert = NSAlert()
+            alert.messageText = "信任此设备？"
+            alert.informativeText = "检测到新的设备 ID: \(DeviceTrustCenter.format(id))\n是否允许与其同步剪贴板？"
+            alert.addButton(withTitle: "信任")
+            alert.addButton(withTitle: "拒绝")
+            let response = alert.runModal()
+            return response == .alertFirstButtonReturn
+        }
+        if Thread.isMainThread { return prompt() }
+        var allowed = false
+        DispatchQueue.main.sync { allowed = prompt() }
+        return allowed
+    }
+
+    static func format(_ id: UInt64) -> String {
+        return String(format: "%016llX", id)
+    }
+}
+
 // MARK: - Status
 final class StatusCenter {
     enum State: String {
@@ -417,6 +496,7 @@ struct ProtocolDecoder {
         let senderId = UInt64(body[0]) << 56 | UInt64(body[1]) << 48 | UInt64(body[2]) << 40 | UInt64(body[3]) << 32 |
                        UInt64(body[4]) << 24 | UInt64(body[5]) << 16 | UInt64(body[6]) << 8 | UInt64(body[7])
         if senderId == SyncConfig.deviceId { return }
+        guard DeviceTrustCenter.shared.ensureTrusted(senderId) else { return }
         let content = body.subdata(in: 8..<body.count)
         let hash = CryptoHelper.sha256(content)
         StatusCenter.shared.bumpTransfer()
@@ -456,6 +536,8 @@ struct ProtocolDecoder {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var statusMenuItem: NSMenuItem!
+    private var trustedMenuItem: NSMenuItem!
+    private var trustedMenu: NSMenu!
     private var peripheral: ClipboardPeripheral?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -466,6 +548,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenuItem = NSMenuItem(title: "Status: starting…", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
+
+        trustedMenuItem = NSMenuItem(title: "受信任设备", action: nil, keyEquivalent: "")
+        trustedMenu = NSMenu()
+        trustedMenuItem.submenu = trustedMenu
+        menu.addItem(trustedMenuItem)
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -477,7 +565,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         StatusCenter.shared.set(.disconnected)
 
+        DeviceTrustCenter.shared.onChange = { [weak self] in
+            self?.refreshTrustedMenu()
+        }
+        refreshTrustedMenu()
+
         peripheral = ClipboardPeripheral()
+    }
+
+    private func refreshTrustedMenu() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.refreshTrustedMenu() }
+            return
+        }
+        trustedMenu.removeAllItems()
+        let devices = DeviceTrustCenter.shared.allTrusted()
+        if devices.isEmpty {
+            let empty = NSMenuItem(title: "（暂无）", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            trustedMenu.addItem(empty)
+        } else {
+            for id in devices {
+                let item = NSMenuItem(title: DeviceTrustCenter.format(id), action: #selector(removeTrustedDevice(_:)), keyEquivalent: "")
+                item.representedObject = id
+                item.target = self
+                trustedMenu.addItem(item)
+            }
+            trustedMenu.addItem(NSMenuItem.separator())
+            trustedMenu.addItem(NSMenuItem(title: "清空列表", action: #selector(clearTrustedDevices), keyEquivalent: ""))
+        }
+    }
+
+    @objc private func removeTrustedDevice(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? UInt64 {
+            DeviceTrustCenter.shared.remove(id)
+        }
+    }
+
+    @objc private func clearTrustedDevices() {
+        DeviceTrustCenter.shared.clear()
     }
 
     @objc private func quitApp() {

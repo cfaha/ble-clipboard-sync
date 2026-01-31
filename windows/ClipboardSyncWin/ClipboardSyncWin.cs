@@ -184,6 +184,7 @@ namespace ClipboardSyncWin
     {
         private readonly NotifyIcon _notifyIcon;
         private readonly ToolStripMenuItem _statusItem;
+        private readonly ToolStripMenuItem _trustedMenuItem;
         private readonly SynchronizationContext _syncContext;
 
         public TrayAppContext()
@@ -191,9 +192,12 @@ namespace ClipboardSyncWin
             _syncContext = SynchronizationContext.Current ?? new SynchronizationContext();
             var menu = new ContextMenuStrip();
             _statusItem = new ToolStripMenuItem("Status: starting…") { Enabled = false };
+            _trustedMenuItem = new ToolStripMenuItem("受信任设备");
+            _trustedMenuItem.DropDownOpening += (_, __) => RefreshTrustedMenu();
             var quitItem = new ToolStripMenuItem("Quit");
             quitItem.Click += (_, __) => ExitThread();
             menu.Items.Add(_statusItem);
+            menu.Items.Add(_trustedMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(quitItem);
 
@@ -204,6 +208,10 @@ namespace ClipboardSyncWin
                 ContextMenuStrip = menu,
                 Visible = true
             };
+
+            DeviceTrustManager.Initialize(_syncContext);
+            DeviceTrustManager.OnChanged += RefreshTrustedMenu;
+            RefreshTrustedMenu();
 
             AppStatus.OnStatusChanged += OnStatusChanged;
         }
@@ -225,9 +233,41 @@ namespace ClipboardSyncWin
             }, null);
         }
 
+        private void RefreshTrustedMenu()
+        {
+            void Update()
+            {
+                _trustedMenuItem.DropDownItems.Clear();
+                var devices = DeviceTrustManager.AllTrusted().ToList();
+                if (devices.Count == 0)
+                {
+                    var empty = new ToolStripMenuItem("（暂无）") { Enabled = false };
+                    _trustedMenuItem.DropDownItems.Add(empty);
+                    return;
+                }
+
+                foreach (var id in devices)
+                {
+                    var item = new ToolStripMenuItem(DeviceTrustManager.Format(id));
+                    item.Click += (_, __) => DeviceTrustManager.RemoveTrusted(id);
+                    _trustedMenuItem.DropDownItems.Add(item);
+                }
+                _trustedMenuItem.DropDownItems.Add(new ToolStripSeparator());
+                var clear = new ToolStripMenuItem("清空列表");
+                clear.Click += (_, __) => DeviceTrustManager.ClearTrusted();
+                _trustedMenuItem.DropDownItems.Add(clear);
+            }
+
+            if (SynchronizationContext.Current == _syncContext)
+                Update();
+            else
+                _syncContext.Post(_ => Update(), null);
+        }
+
         protected override void ExitThreadCore()
         {
             AppStatus.OnStatusChanged -= OnStatusChanged;
+            DeviceTrustManager.OnChanged -= RefreshTrustedMenu;
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             base.ExitThreadCore();
@@ -368,6 +408,112 @@ namespace ClipboardSyncWin
                 return _cached.Value;
             }
         }
+    }
+
+    static class DeviceTrustStore
+    {
+        private static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipboardSyncWin");
+        private static readonly string PathFile = System.IO.Path.Combine(Dir, "trusted.json");
+        private static readonly HashSet<ulong> Trusted = Load();
+
+        public static IEnumerable<ulong> All() => Trusted.OrderBy(x => x);
+
+        public static bool IsTrusted(ulong id) => Trusted.Contains(id);
+
+        public static void Add(ulong id)
+        {
+            if (Trusted.Add(id)) Save();
+        }
+
+        public static void Remove(ulong id)
+        {
+            if (Trusted.Remove(id)) Save();
+        }
+
+        public static void Clear()
+        {
+            if (Trusted.Count == 0) return;
+            Trusted.Clear();
+            Save();
+        }
+
+        private static HashSet<ulong> Load()
+        {
+            try
+            {
+                if (!File.Exists(PathFile)) return new HashSet<ulong>();
+                var json = File.ReadAllText(PathFile);
+                var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+                return new HashSet<ulong>(list.Select(x => ulong.TryParse(x, out var v) ? v : 0).Where(x => x != 0));
+            }
+            catch
+            {
+                return new HashSet<ulong>();
+            }
+        }
+
+        private static void Save()
+        {
+            Directory.CreateDirectory(Dir);
+            var list = Trusted.Select(x => x.ToString()).ToList();
+            var json = System.Text.Json.JsonSerializer.Serialize(list);
+            File.WriteAllText(PathFile, json);
+            DeviceTrustManager.NotifyChanged();
+        }
+    }
+
+    static class DeviceTrustManager
+    {
+        private static SynchronizationContext _syncContext;
+        public static event Action? OnChanged;
+
+        public static void Initialize(SynchronizationContext context)
+        {
+            _syncContext = context;
+        }
+
+        public static IEnumerable<ulong> AllTrusted() => DeviceTrustStore.All();
+
+        public static bool EnsureTrusted(ulong id)
+        {
+            if (DeviceTrustStore.IsTrusted(id)) return true;
+            return PromptTrust(id);
+        }
+
+        public static void RemoveTrusted(ulong id) => DeviceTrustStore.Remove(id);
+        public static void ClearTrusted() => DeviceTrustStore.Clear();
+
+        private static bool PromptTrust(ulong id)
+        {
+            bool allowed = false;
+            using var wait = new ManualResetEventSlim(false);
+            void Prompt()
+            {
+                var msg = $"检测到新的设备 ID: {Format(id)}\n是否允许与其同步剪贴板？";
+                var result = MessageBox.Show(msg, "信任此设备？", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (result == DialogResult.Yes)
+                {
+                    DeviceTrustStore.Add(id);
+                    allowed = true;
+                }
+                wait.Set();
+            }
+
+            if (_syncContext != null)
+                _syncContext.Post(_ => Prompt(), null);
+            else
+                Prompt();
+
+            wait.Wait();
+            return allowed;
+        }
+
+        public static void NotifyChanged()
+        {
+            OnChanged?.Invoke();
+        }
+
+        public static string Format(ulong id) => id.ToString("X16");
     }
 
     static class LoopState
@@ -577,6 +723,7 @@ namespace ClipboardSyncWin
             ulong senderId = ((ulong)body[0] << 56) | ((ulong)body[1] << 48) | ((ulong)body[2] << 40) | ((ulong)body[3] << 32) |
                              ((ulong)body[4] << 24) | ((ulong)body[5] << 16) | ((ulong)body[6] << 8) | (ulong)body[7];
             if (senderId == SyncConfig.DeviceId) return;
+            if (!DeviceTrustManager.EnsureTrusted(senderId)) return;
             var content = new byte[body.Length - 8];
             System.Buffer.BlockCopy(body, 8, content, 0, content.Length);
             var hash = CryptoHelper.Sha256(content);

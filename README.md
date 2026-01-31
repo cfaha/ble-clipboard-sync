@@ -12,6 +12,7 @@
 - **自动重连**：Windows 断线后自动重新扫描连接
 - **安全与可靠**：AES-GCM 加密、可选压缩、设备 ID 回环防止
 - **托盘/菜单栏**：Windows 通知区域与 macOS 菜单栏显示连接/加密状态，支持退出
+- **设备信任（白名单）**：首次接收到新设备会弹窗确认，信任后持久化，可在托盘/菜单栏查看并移除
 
 ## 传输协议（CBCLP v2）
 - 消息帧：`[type:1][flags:1][seq:2][total:2][len:2][payload:len]`
@@ -21,7 +22,7 @@
 - **file payload**：`[nameLen:2][nameUtf8][fileBytes]`
 
 ### Payload 封装
-1. **原始内容**：`[senderId:4][content...]`
+1. **原始内容**：`[senderId:8][content...]`
 2. **可选压缩**：若 `flags.bit1=1`，payload 变为 `[origLen:4][zlib(data)]`
 3. **可选加密**：若 `flags.bit2=1`，payload 变为 `nonce(12) + ciphertext + tag(16)`
    - 算法：AES-GCM
@@ -44,6 +45,7 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 3. 配置 `SyncConfig.sharedKeyBase64`
 4. 启用蓝牙权限（Info.plist 添加 `NSBluetoothAlwaysUsageDescription`）
 5. 运行后会出现在菜单栏（状态：未连接 / 已连接 / 已连接·已加密 / 传输中），开始广播（DeviceId 将自动生成并持久化）
+6. 首次接收到新设备会弹窗询问是否信任；可在菜单栏「受信任设备」中查看/移除
 
 #### macOS 打包流程（本地）
 > 想“可直接运行”，建议签名 + notarize。
@@ -64,6 +66,7 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 2. 将 `ClipboardSyncWin.cs` 复制到工程
 3. 配置 `SyncConfig.SharedKeyBase64`
 4. 运行后会在通知区域显示图标（状态：未连接 / 已连接 / 已连接·已加密 / 传输中），扫描并连接名为 `BLEClipboardSync` 的外设（DeviceId 自动生成并持久化）
+5. 首次接收到新设备会弹窗询问是否信任；可在托盘图标菜单「受信任设备」中查看/移除
 
 ### 配置说明
 - `DeviceId`：8 字节设备 ID（Snowflake/64-bit），**自动生成并持久化**（用于回环防止）
@@ -79,7 +82,6 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 
 ## 后续可扩展
 - 断点续传/重传窗口
-- 设备配对/白名单
 - 历史剪贴板
 
 ## 若平台 API 有限制的替代方案（计划）
