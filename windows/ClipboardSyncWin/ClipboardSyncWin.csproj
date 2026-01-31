@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWinUI>false</UseWinUI>
+    <UseWindowsForms>true</UseWindowsForms>
     <UseWindowsSDK>true</UseWindowsSDK>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>

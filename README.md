@@ -11,6 +11,7 @@
 - **双向同步**：双方都可写入对方（两条特征：Notify / Write）
 - **自动重连**：Windows 断线后自动重新扫描连接
 - **安全与可靠**：AES-GCM 加密、可选压缩、设备 ID 回环防止
+- **托盘/菜单栏**：Windows 通知区域与 macOS 菜单栏显示连接/加密状态，支持退出
 
 ## 传输协议（CBCLP v2）
 - 消息帧：`[type:1][flags:1][seq:2][total:2][len:2][payload:len]`
@@ -32,13 +33,17 @@ mac/ClipboardSyncMac/         # macOS (Swift + CoreBluetooth)
 windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 ```
 
+## 项目结构要求（托盘/菜单栏）
+- **macOS**：需要 AppKit App（非纯命令行），使用 `NSApplication` + `NSStatusBar` 显示菜单栏项
+- **Windows**：需要 WinForms 支持（`UseWindowsForms=true` + `[STAThread]`），用于 `NotifyIcon`
+
 ## 使用步骤（开发者）
 ### macOS
-1. 打开 `mac/ClipboardSyncMac` 用 Xcode 创建 App（macOS App 或 Menu Bar App）
+1. 打开 `mac/ClipboardSyncMac` 用 Xcode 创建 **macOS App（建议 Menu Bar App / AppKit）**
 2. 将 `ClipboardSyncMac.swift` 复制到工程
 3. 配置 `SyncConfig.sharedKeyBase64`
 4. 启用蓝牙权限（Info.plist 添加 `NSBluetoothAlwaysUsageDescription`）
-5. 运行，开始广播（DeviceId 将自动生成并持久化）
+5. 运行后会出现在菜单栏（Status: Connected/Encrypted），开始广播（DeviceId 将自动生成并持久化）
 
 #### macOS 打包流程（本地）
 > 想“可直接运行”，建议签名 + notarize。
@@ -55,15 +60,16 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 4. 产出 `.app` 或 `.dmg` 可直接分发
 
 ### Windows
-1. 打开 `windows/ClipboardSyncWin` 用 Visual Studio 创建 WPF/Console 项目
+1. 打开 `windows/ClipboardSyncWin` 用 Visual Studio 创建 **WinForms/WPF 项目（需要通知栏图标）**
 2. 将 `ClipboardSyncWin.cs` 复制到工程
 3. 配置 `SyncConfig.SharedKeyBase64`
-4. 运行，扫描并连接名为 `BLEClipboardSync` 的外设（DeviceId 自动生成并持久化）
+4. 运行后会在通知区域显示图标（Status: Connected/Encrypted），扫描并连接名为 `BLEClipboardSync` 的外设（DeviceId 自动生成并持久化）
 
 ### 配置说明
 - `DeviceId`：8 字节设备 ID（Snowflake/64-bit），**自动生成并持久化**（用于回环防止）
 - `SharedKeyBase64`：AES-GCM 密钥（16/24/32 字节，Base64 编码），**两端必须一致**
 - `CompressionThreshold`：超过此长度才启用压缩
+- 状态栏/托盘中 **Encrypted/Unencrypted** 由 `SharedKeyBase64` 是否配置有效密钥决定
 
 ## 限制
 - BLE 带宽有限，大文件会比较慢

@@ -13,6 +13,9 @@ using Windows.Storage.Streams;
 using System.Security.Cryptography;
 using System.IO;
 using System.IO.Compression;
+using System.Windows.Forms;
+using System.Drawing;
+using System.Threading;
 
 namespace ClipboardSyncWin
 {
@@ -27,17 +30,25 @@ namespace ClipboardSyncWin
         private static GattCharacteristic _notifyChar;
         private static GattCharacteristic _writeChar;
 
-        static async Task Main(string[] args)
+        [STAThread]
+        static void Main(string[] args)
         {
-            StartScan();
-            Console.WriteLine("Press Enter to exit.");
-            Console.ReadLine();
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
 
+            AppStatus.Initialize();
+            StartScan();
+
+            using var context = new TrayAppContext();
+            Application.Run(context);
+
+            _watcher?.Stop();
             if (_device != null) _device.Dispose();
         }
 
         private static void StartScan()
         {
+            AppStatus.SetConnected(false);
             _watcher?.Stop();
             _watcher = new BluetoothLEAdvertisementWatcher();
             _watcher.Received += async (w, evt) =>
@@ -61,6 +72,7 @@ namespace ClipboardSyncWin
             {
                 if (_device.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
                 {
+                    AppStatus.SetConnected(false);
                     Console.WriteLine("Disconnected. Re-scanning...");
                     StartScan();
                 }
@@ -86,6 +98,8 @@ namespace ClipboardSyncWin
 
             await _notifyChar.WriteClientCharacteristicConfigurationDescriptorAsync(
                 GattClientCharacteristicConfigurationDescriptorValue.Notify);
+
+            AppStatus.SetConnected(true);
 
             Clipboard.ContentChanged += async (s, e) =>
             {
@@ -165,6 +179,91 @@ namespace ClipboardSyncWin
         }
     }
 
+    sealed class TrayAppContext : ApplicationContext
+    {
+        private readonly NotifyIcon _notifyIcon;
+        private readonly ToolStripMenuItem _statusItem;
+        private readonly SynchronizationContext _syncContext;
+
+        public TrayAppContext()
+        {
+            _syncContext = SynchronizationContext.Current ?? new SynchronizationContext();
+            var menu = new ContextMenuStrip();
+            _statusItem = new ToolStripMenuItem("Status: starting…") { Enabled = false };
+            var quitItem = new ToolStripMenuItem("Quit");
+            quitItem.Click += (_, __) => ExitThread();
+            menu.Items.Add(_statusItem);
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(quitItem);
+
+            _notifyIcon = new NotifyIcon
+            {
+                Icon = SystemIcons.Application,
+                Text = "BLE Clipboard Sync",
+                ContextMenuStrip = menu,
+                Visible = true
+            };
+
+            AppStatus.OnStatusChanged += OnStatusChanged;
+        }
+
+        private void OnStatusChanged(string status)
+        {
+            _syncContext.Post(_ =>
+            {
+                _statusItem.Text = $"Status: {status}";
+                var baseText = "BLE Clipboard Sync";
+                var combined = $"{baseText} ({status})";
+                if (combined.Length > 63)
+                {
+                    var available = 63 - baseText.Length - 3;
+                    combined = available > 0 ? $"{baseText} ({status.Substring(0, available)})" : baseText;
+                }
+                _notifyIcon.Text = combined;
+            }, null);
+        }
+
+        protected override void ExitThreadCore()
+        {
+            AppStatus.OnStatusChanged -= OnStatusChanged;
+            _notifyIcon.Visible = false;
+            _notifyIcon.Dispose();
+            base.ExitThreadCore();
+        }
+    }
+
+    static class AppStatus
+    {
+        private static bool _connected;
+        private static bool _encrypted;
+        public static event Action<string>? OnStatusChanged;
+
+        public static void Initialize()
+        {
+            _encrypted = CryptoHelper.HasKey;
+            Emit();
+        }
+
+        public static void SetConnected(bool connected)
+        {
+            _connected = connected;
+            Emit();
+        }
+
+        public static void SetEncryptionAvailable(bool encrypted)
+        {
+            _encrypted = encrypted;
+            Emit();
+        }
+
+        private static void Emit()
+        {
+            var status = _connected ? "Connected" : "Disconnected";
+            status += _encrypted ? " • Encrypted" : " • Unencrypted";
+            OnStatusChanged?.Invoke(status);
+        }
+    }
+
     static class SyncConfig
     {
         public static ulong DeviceId => DeviceIdProvider.GetOrCreate();
@@ -232,6 +331,14 @@ namespace ClipboardSyncWin
         {
             using var sha = SHA256.Create();
             return sha.ComputeHash(data);
+        }
+
+        public static bool HasKey
+        {
+            get
+            {
+                return TryGetKey(out _);
+            }
         }
 
         private static bool TryGetKey(out byte[] key)

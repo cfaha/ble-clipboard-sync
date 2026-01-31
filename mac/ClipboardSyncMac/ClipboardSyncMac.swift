@@ -49,6 +49,32 @@ final class LoopState {
     }
 }
 
+// MARK: - Status Center
+final class StatusCenter {
+    static let shared = StatusCenter()
+    private init() {}
+
+    var isConnected: Bool = false {
+        didSet { publish() }
+    }
+
+    var isEncrypted: Bool = (CryptoHelper.key != nil) {
+        didSet { publish() }
+    }
+
+    var onUpdate: ((String) -> Void)?
+
+    func statusText() -> String {
+        let conn = isConnected ? "Connected" : "Disconnected"
+        let enc = isEncrypted ? "Encrypted" : "Unencrypted"
+        return "\(conn) • \(enc)"
+    }
+
+    func publish() {
+        onUpdate?(statusText())
+    }
+}
+
 // MARK: - BLE Clipboard Peripheral (Mac)
 final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     private var peripheralManager: CBPeripheralManager!
@@ -58,12 +84,17 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     override init() {
         super.init()
+        StatusCenter.shared.isEncrypted = (CryptoHelper.key != nil)
+        StatusCenter.shared.isConnected = false
         peripheralManager = CBPeripheralManager(delegate: self, queue: nil)
         startClipboardMonitor()
     }
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
-        guard peripheral.state == .poweredOn else { return }
+        guard peripheral.state == .poweredOn else {
+            StatusCenter.shared.isConnected = false
+            return
+        }
         setupService()
         startAdvertising()
     }
@@ -150,6 +181,14 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
         for frame in frames {
             _ = peripheralManager.updateValue(frame, for: notifyChar, onSubscribedCentrals: nil)
         }
+    }
+
+    func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
+        StatusCenter.shared.isConnected = true
+    }
+
+    func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
+        StatusCenter.shared.isConnected = false
     }
 
     // MARK: - Receive from Windows
@@ -402,5 +441,39 @@ struct ProtocolDecoder {
 }
 
 // MARK: - App Entry
-// 在你的 App 入口初始化：
-// let _ = ClipboardPeripheral()
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private var statusMenuItem: NSMenuItem!
+    private var peripheral: ClipboardPeripheral?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.button?.title = "Clip"
+
+        let menu = NSMenu()
+        statusMenuItem = NSMenuItem(title: "Status: starting…", action: nil, keyEquivalent: "")
+        statusMenuItem.isEnabled = false
+        menu.addItem(statusMenuItem)
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
+        statusItem.menu = menu
+
+        StatusCenter.shared.onUpdate = { [weak self] status in
+            self?.statusMenuItem.title = "Status: \(status)"
+            self?.statusItem.button?.toolTip = status
+        }
+        StatusCenter.shared.publish()
+
+        peripheral = ClipboardPeripheral()
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
+    }
+}
+
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.setActivationPolicy(.accessory)
+app.run()
