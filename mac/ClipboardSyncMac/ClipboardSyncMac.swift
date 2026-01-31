@@ -11,17 +11,17 @@ let writeCharUUID  = CBUUID(string: "A1B2C3D4-0002-1000-8000-00805F9B34FB")
 
 // MARK: - Config
 enum SyncConfig {
-    // 4-byte device id (auto-generated & persisted per device)
-    static var deviceId: UInt32 = {
+    // 8-byte device id (auto-generated & persisted per device)
+    static var deviceId: UInt64 = {
         let key = "BLEClipboardDeviceId"
         let defaults = UserDefaults.standard
-        if let data = defaults.data(forKey: key), data.count == 4 {
-            return data.withUnsafeBytes { $0.load(as: UInt32.self) }
+        if let data = defaults.data(forKey: key), data.count == 8 {
+            return data.withUnsafeBytes { $0.load(as: UInt64.self) }
         }
-        var value: UInt32 = 0
-        _ = SecRandomCopyBytes(kSecRandomDefault, 4, &value)
+        var value: UInt64 = 0
+        _ = SecRandomCopyBytes(kSecRandomDefault, 8, &value)
         var v = value
-        let data = Data(bytes: &v, count: 4)
+        let data = Data(bytes: &v, count: 8)
         defaults.set(data, forKey: key)
         return value
     }()
@@ -263,6 +263,10 @@ struct ProtocolEncoder {
     static func encode(type: UInt8, payload: Data) -> [Data] {
         var flags: UInt8 = 0
         var body = Data()
+        body.append(UInt8((SyncConfig.deviceId >> 56) & 0xff))
+        body.append(UInt8((SyncConfig.deviceId >> 48) & 0xff))
+        body.append(UInt8((SyncConfig.deviceId >> 40) & 0xff))
+        body.append(UInt8((SyncConfig.deviceId >> 32) & 0xff))
         body.append(UInt8((SyncConfig.deviceId >> 24) & 0xff))
         body.append(UInt8((SyncConfig.deviceId >> 16) & 0xff))
         body.append(UInt8((SyncConfig.deviceId >> 8) & 0xff))
@@ -359,10 +363,11 @@ struct ProtocolDecoder {
             body = decompressed
         }
 
-        guard body.count >= 4 else { return }
-        let senderId = UInt32(body[0]) << 24 | UInt32(body[1]) << 16 | UInt32(body[2]) << 8 | UInt32(body[3])
+        guard body.count >= 8 else { return }
+        let senderId = UInt64(body[0]) << 56 | UInt64(body[1]) << 48 | UInt64(body[2]) << 40 | UInt64(body[3]) << 32 |
+                       UInt64(body[4]) << 24 | UInt64(body[5]) << 16 | UInt64(body[6]) << 8 | UInt64(body[7])
         if senderId == SyncConfig.deviceId { return }
-        let content = body.subdata(in: 4..<body.count)
+        let content = body.subdata(in: 8..<body.count)
         let hash = CryptoHelper.sha256(content)
 
         switch type {

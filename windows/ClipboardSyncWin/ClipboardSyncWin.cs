@@ -167,15 +167,15 @@ namespace ClipboardSyncWin
 
     static class SyncConfig
     {
-        public static uint DeviceId => DeviceIdProvider.GetOrCreate();
+        public static ulong DeviceId => DeviceIdProvider.GetOrCreate();
         public const string SharedKeyBase64 = "REPLACE_WITH_BASE64_KEY";
         public const int CompressionThreshold = 256;
     }
 
     static class DeviceIdProvider
     {
-        private static uint? _cached;
-        public static uint GetOrCreate()
+        private static ulong? _cached;
+        public static ulong GetOrCreate()
         {
             if (_cached.HasValue) return _cached.Value;
             try
@@ -186,15 +186,15 @@ namespace ClipboardSyncWin
                 if (File.Exists(path))
                 {
                     var bytes = File.ReadAllBytes(path);
-                    if (bytes.Length == 4)
+                    if (bytes.Length == 8)
                     {
-                        _cached = BitConverter.ToUInt32(bytes, 0);
+                        _cached = BitConverter.ToUInt64(bytes, 0);
                         return _cached.Value;
                     }
                 }
-                var rnd = RandomNumberGenerator.GetBytes(4);
+                var rnd = RandomNumberGenerator.GetBytes(8);
                 File.WriteAllBytes(path, rnd);
-                _cached = BitConverter.ToUInt32(rnd, 0);
+                _cached = BitConverter.ToUInt64(rnd, 0);
                 return _cached.Value;
             }
             catch
@@ -202,7 +202,7 @@ namespace ClipboardSyncWin
                 // fallback: hash machine name
                 using var sha = SHA256.Create();
                 var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(Environment.MachineName));
-                _cached = BitConverter.ToUInt32(hash, 0);
+                _cached = BitConverter.ToUInt64(hash, 0);
                 return _cached.Value;
             }
         }
@@ -331,7 +331,11 @@ namespace ClipboardSyncWin
         {
             byte flags = 0;
             var body = new List<byte>();
-            body.Add((byte)(SyncConfig.DeviceId >> 24));
+            body.Add((byte)(SyncConfig.DeviceId >> 56));
+            body.Add((byte)((SyncConfig.DeviceId >> 48) & 0xff));
+            body.Add((byte)((SyncConfig.DeviceId >> 40) & 0xff));
+            body.Add((byte)((SyncConfig.DeviceId >> 32) & 0xff));
+            body.Add((byte)((SyncConfig.DeviceId >> 24) & 0xff));
             body.Add((byte)((SyncConfig.DeviceId >> 16) & 0xff));
             body.Add((byte)((SyncConfig.DeviceId >> 8) & 0xff));
             body.Add((byte)(SyncConfig.DeviceId & 0xff));
@@ -400,10 +404,11 @@ namespace ClipboardSyncWin
             }
 
             if (body.Length < 4) return;
-            uint senderId = (uint)(body[0] << 24 | body[1] << 16 | body[2] << 8 | body[3]);
+            ulong senderId = ((ulong)body[0] << 56) | ((ulong)body[1] << 48) | ((ulong)body[2] << 40) | ((ulong)body[3] << 32) |
+                             ((ulong)body[4] << 24) | ((ulong)body[5] << 16) | ((ulong)body[6] << 8) | (ulong)body[7];
             if (senderId == SyncConfig.DeviceId) return;
-            var content = new byte[body.Length - 4];
-            System.Buffer.BlockCopy(body, 4, content, 0, content.Length);
+            var content = new byte[body.Length - 8];
+            System.Buffer.BlockCopy(body, 8, content, 0, content.Length);
             var hash = CryptoHelper.Sha256(content);
 
             if (type == 0x01)

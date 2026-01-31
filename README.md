@@ -61,7 +61,7 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 4. 运行，扫描并连接名为 `BLEClipboardSync` 的外设（DeviceId 自动生成并持久化）
 
 ### 配置说明
-- `DeviceId`：4 字节设备 ID，**自动生成并持久化**（用于回环防止）
+- `DeviceId`：8 字节设备 ID（Snowflake/64-bit），**自动生成并持久化**（用于回环防止）
 - `SharedKeyBase64`：AES-GCM 密钥（16/24/32 字节，Base64 编码），**两端必须一致**
 - `CompressionThreshold`：超过此长度才启用压缩
 
