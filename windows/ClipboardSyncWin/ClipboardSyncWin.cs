@@ -283,7 +283,7 @@ namespace ClipboardSyncWin
         private static bool _encrypted;
         private static State _state = State.Disconnected;
         private static State _lastStable = State.Disconnected;
-        private static Timer _timer;
+        private static System.Threading.Timer _timer;
 
         public static event Action<State, string>? OnStatusChanged;
 
