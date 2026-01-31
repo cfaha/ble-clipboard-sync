@@ -63,10 +63,32 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     private func sendClipboardIfNeeded() {
-        // Text only for demo; image/file needs chunking in practice
         if let text = pasteboard.string(forType: .string) {
-            let data = ProtocolEncoder.encodeText(text)
-            peripheralManager.updateValue(data, for: notifyChar, onSubscribedCentrals: nil)
+            let frames = ProtocolEncoder.encodeText(text)
+            sendFrames(frames)
+            return
+        }
+
+        if let tiff = pasteboard.data(forType: .tiff),
+           let imageRep = NSBitmapImageRep(data: tiff),
+           let png = imageRep.representation(using: .png, properties: [:]) {
+            let frames = ProtocolEncoder.encodeImage(png)
+            sendFrames(frames)
+            return
+        }
+
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           let first = urls.first,
+           let fileData = try? Data(contentsOf: first) {
+            let frames = ProtocolEncoder.encodeFile(name: first.lastPathComponent, data: fileData)
+            sendFrames(frames)
+            return
+        }
+    }
+
+    private func sendFrames(_ frames: [Data]) {
+        for frame in frames {
+            _ = peripheralManager.updateValue(frame, for: notifyChar, onSubscribedCentrals: nil)
         }
     }
 
@@ -83,36 +105,116 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
 // MARK: - Protocol
 struct ProtocolEncoder {
-    static func encodeText(_ text: String) -> Data {
+    private static let maxChunkSize = 180
+
+    static func encodeText(_ text: String) -> [Data] {
         let payload = text.data(using: .utf8) ?? Data()
         return encode(type: 0x01, payload: payload)
     }
 
-    static func encode(type: UInt8, payload: Data) -> Data {
-        // Simple single-frame (no chunk). For large payloads, add chunking.
-        var data = Data()
-        data.append(type)
-        data.append(0x01) // flags: last
-        data.append(contentsOf: [0x00, 0x00]) // seq
-        data.append(contentsOf: [0x00, 0x01]) // total
-        let len = UInt16(payload.count)
-        data.append(UInt8(len >> 8))
-        data.append(UInt8(len & 0xff))
-        data.append(payload)
-        return data
+    static func encodeImage(_ data: Data) -> [Data] {
+        return encode(type: 0x02, payload: data)
+    }
+
+    static func encodeFile(name: String, data: Data) -> [Data] {
+        let nameData = name.data(using: .utf8) ?? Data()
+        var payload = Data()
+        let nameLen = UInt16(nameData.count)
+        payload.append(UInt8(nameLen >> 8))
+        payload.append(UInt8(nameLen & 0xff))
+        payload.append(nameData)
+        payload.append(data)
+        return encode(type: 0x03, payload: payload)
+    }
+
+    static func encode(type: UInt8, payload: Data) -> [Data] {
+        let total = UInt16(max(1, (payload.count + maxChunkSize - 1) / maxChunkSize))
+        var frames: [Data] = []
+        for i in 0..<Int(total) {
+            let start = i * maxChunkSize
+            let end = min(payload.count, start + maxChunkSize)
+            let chunk = payload.subdata(in: start..<end)
+            var frame = Data()
+            frame.append(type)
+            let isLast = (i == Int(total) - 1)
+            frame.append(isLast ? 0x01 : 0x00) // flags: last
+            frame.append(UInt8((i >> 8) & 0xff))
+            frame.append(UInt8(i & 0xff))
+            frame.append(UInt8((Int(total) >> 8) & 0xff))
+            frame.append(UInt8(Int(total) & 0xff))
+            let len = UInt16(chunk.count)
+            frame.append(UInt8(len >> 8))
+            frame.append(UInt8(len & 0xff))
+            frame.append(chunk)
+            frames.append(frame)
+        }
+        return frames
+    }
+}
+
+final class IncomingAssembler {
+    private var currentType: UInt8 = 0
+    private var currentTotal: UInt16 = 0
+    private var chunks: [Int: Data] = [:]
+
+    func append(frame: Data) -> (UInt8, Data)? {
+        guard frame.count >= 8 else { return nil }
+        let type = frame[0]
+        let seq = Int(frame[2]) << 8 | Int(frame[3])
+        let total = UInt16(frame[4]) << 8 | UInt16(frame[5])
+        let len = Int(frame[6]) << 8 | Int(frame[7])
+        guard frame.count >= 8 + len else { return nil }
+
+        if seq == 0 || type != currentType || total != currentTotal {
+            currentType = type
+            currentTotal = total
+            chunks.removeAll()
+        }
+
+        let payload = frame.subdata(in: 8..<(8 + len))
+        chunks[seq] = payload
+
+        if chunks.count == Int(total) {
+            var combined = Data()
+            for i in 0..<Int(total) {
+                if let part = chunks[i] { combined.append(part) }
+            }
+            chunks.removeAll()
+            return (type, combined)
+        }
+        return nil
     }
 }
 
 struct ProtocolDecoder {
+    private static var assembler = IncomingAssembler()
+
     static func handleIncoming(data: Data, pasteboard: NSPasteboard) {
-        guard data.count >= 8 else { return }
-        let type = data[0]
-        let len = Int(data[6]) << 8 | Int(data[7])
-        guard data.count >= 8 + len else { return }
-        let payload = data.subdata(in: 8..<(8+len))
-        if type == 0x01, let text = String(data: payload, encoding: .utf8) {
+        guard let (type, payload) = assembler.append(frame: data) else { return }
+        switch type {
+        case 0x01:
+            if let text = String(data: payload, encoding: .utf8) {
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+            }
+        case 0x02:
+            if let image = NSImage(data: payload) {
+                pasteboard.clearContents()
+                pasteboard.writeObjects([image])
+            }
+        case 0x03:
+            guard payload.count >= 2 else { return }
+            let nameLen = Int(payload[0]) << 8 | Int(payload[1])
+            guard payload.count >= 2 + nameLen else { return }
+            let nameData = payload.subdata(in: 2..<(2 + nameLen))
+            let fileData = payload.subdata(in: (2 + nameLen)..<payload.count)
+            let filename = String(data: nameData, encoding: .utf8) ?? "clipboard.file"
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+            try? fileData.write(to: tmp)
             pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
+            pasteboard.writeObjects([tmp as NSURL])
+        default:
+            break
         }
     }
 }
