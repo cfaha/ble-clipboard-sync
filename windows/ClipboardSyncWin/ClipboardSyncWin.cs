@@ -29,7 +29,18 @@ namespace ClipboardSyncWin
         private static GattCharacteristic _notifyChar;
         private static GattCharacteristic _writeChar;
 
-        private static Windows.ApplicationModel.DataTransfer.Clipboard WinClipboard => Windows.ApplicationModel.DataTransfer.Clipboard;
+        private static class WinClipboard
+        {
+            public static event EventHandler<object> ContentChanged
+            {
+                add => Windows.ApplicationModel.DataTransfer.Clipboard.ContentChanged += value;
+                remove => Windows.ApplicationModel.DataTransfer.Clipboard.ContentChanged -= value;
+            }
+            public static Windows.ApplicationModel.DataTransfer.DataPackageView GetContent()
+                => Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+            public static void SetContent(Windows.ApplicationModel.DataTransfer.DataPackage data)
+                => Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+        }
 
         [STAThread]
         static void Main(string[] args)
