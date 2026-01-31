@@ -775,7 +775,7 @@ namespace ClipboardSyncWin
                 var text = Encoding.UTF8.GetString(content);
                 var dp = new DataPackage();
                 dp.SetText(text);
-                WinClipboard.SetContent(dp);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
                 LoopState.MarkReceived(hash);
             }
             else if (type == 0x02)
@@ -788,7 +788,7 @@ namespace ClipboardSyncWin
                 stream.Seek(0);
                 var dp = new DataPackage();
                 dp.SetBitmap(RandomAccessStreamReference.CreateFromStream(stream));
-                WinClipboard.SetContent(dp);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
                 LoopState.MarkReceived(hash);
             }
             else if (type == 0x03)
@@ -805,7 +805,7 @@ namespace ClipboardSyncWin
 
                 var dp = new DataPackage();
                 dp.SetStorageItems(new[] { file });
-                WinClipboard.SetContent(dp);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
                 LoopState.MarkReceived(hash);
             }
         }
