@@ -522,7 +522,7 @@ namespace ClipboardSyncWin
                 var icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "clipboard-bt.ico");
                 if (File.Exists(icoPath))
                 {
-                    return new Icon(icoPath);
+                    return new Icon(icoPath, new Size(16, 16));
                 }
 
                 var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "clipboard-bt.png");
