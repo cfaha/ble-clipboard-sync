@@ -670,8 +670,9 @@ struct ProtocolDecoder {
         }
 
         guard body.count >= 8 else { return }
-        let senderId = (UInt64(body[0]) << 56) | (UInt64(body[1]) << 48) | (UInt64(body[2]) << 40) | (UInt64(body[3]) << 32) |
-                       (UInt64(body[4]) << 24) | (UInt64(body[5]) << 16) | (UInt64(body[6]) << 8) | UInt64(body[7])
+        let senderIdHigh = (UInt64(body[0]) << 56) | (UInt64(body[1]) << 48) | (UInt64(body[2]) << 40) | (UInt64(body[3]) << 32)
+        let senderIdLow  = (UInt64(body[4]) << 24) | (UInt64(body[5]) << 16) | (UInt64(body[6]) << 8) | UInt64(body[7])
+        let senderId = senderIdHigh | senderIdLow
         if senderId == SyncConfig.deviceId { return }
         guard DeviceTrustCenter.shared.ensureTrusted(senderId) else { return }
         let content = body.subdata(in: 8..<body.count)

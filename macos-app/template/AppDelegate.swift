@@ -61,11 +61,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             throw NSError(domain: "LogCenter", code: -1)
-            let alert = NSAlert()
-            alert.messageText = "日志已导出"
-            alert.informativeText = path
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
         } catch {
             let alert = NSAlert()
             alert.messageText = "日志导出失败"
