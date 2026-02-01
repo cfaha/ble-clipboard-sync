@@ -49,7 +49,7 @@ namespace ClipboardSyncWin
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            LogCenter.Log("App started");
+            LogCenter.Log("App started [v1.0.3-20260201-1611]");
             AppStatus.Initialize();
             _ = StartScanAsync();
 

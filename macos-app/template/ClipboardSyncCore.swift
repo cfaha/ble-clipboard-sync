@@ -232,12 +232,13 @@ final class StatusCenter {
 // MARK: - Logs
 final class LogCenter {
     static let shared = LogCenter()
+    private let buildTag = "v1.0.3-20260201-1611"
     private let queue = DispatchQueue(label: "LogCenter.queue")
     private var buffer: [String] = []
     private let maxLines = 1000
 
     func log(_ message: String) {
-        let line = "\(LogCenter.timestamp()) \(message)"
+        let line = "\(LogCenter.timestamp()) [\(buildTag)] \(message)"
         queue.sync {
             buffer.append(line)
             if buffer.count > maxLines {
