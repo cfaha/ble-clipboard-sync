@@ -333,6 +333,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     private var notifyChar: CBMutableCharacteristic!
     private let pasteboard = NSPasteboard.general
     private var changeCount: Int = 0
+    private var hasSubscriber = false
 
     override init() {
         super.init()
@@ -380,6 +381,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
         LogCenter.shared.log("Central subscribed: \(central.identifier.uuidString)")
+        hasSubscriber = true
         DeviceTrustCenter.shared.promptOnConnect(central.identifier)
         if CryptoHelper.key != nil {
             StatusCenter.shared.set(.encrypted)
@@ -390,6 +392,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
         LogCenter.shared.log("Central unsubscribed: \(central.identifier.uuidString)")
+        hasSubscriber = false
         StatusCenter.shared.set(.disconnected)
     }
 
@@ -409,6 +412,9 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     private func sendClipboardIfNeeded() {
+        guard peripheralManager.state == .poweredOn, notifyChar != nil, hasSubscriber else {
+            return
+        }
         if let text = pasteboard.string(forType: .string) {
             let payload = text.data(using: .utf8) ?? Data()
             let hash = CryptoHelper.sha256(payload)
