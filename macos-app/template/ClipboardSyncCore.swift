@@ -373,7 +373,9 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     private var currentTransferName: String?
     private var currentTransferTotal: Int = 0
     private var currentTransferSent: Int = 0
+    private var cancelTransfer = false
     var onProgress: ((String, Double, Int, Int) -> Void)?
+    var onTransferCanceled: (() -> Void)?
 
     override init() {
         super.init()
@@ -495,6 +497,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
         currentTransferName = url.lastPathComponent
         currentTransferTotal = frames.count
         currentTransferSent = 0
+        cancelTransfer = false
         onProgress?(currentTransferName ?? "文件", 0.0, 0, currentTransferTotal)
         LogCenter.shared.log("Send file: \(payload.count) bytes, \(frames.count) frames, name=\(url.lastPathComponent)")
         sendFrames(frames)
@@ -587,6 +590,15 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             if targets?.isEmpty == true { return }
         }
         while !pendingFrames.isEmpty {
+            if cancelTransfer {
+                pendingFrames.removeAll()
+                currentTransferName = nil
+                currentTransferTotal = 0
+                currentTransferSent = 0
+                cancelTransfer = false
+                onTransferCanceled?()
+                return
+            }
             let frame = pendingFrames.first!
             let ok = peripheralManager.updateValue(frame, for: notifyChar, onSubscribedCentrals: targets)
             if !ok {
@@ -604,6 +616,11 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
                 }
             }
         }
+    }
+
+    func cancelCurrentTransfer() {
+        cancelTransfer = true
+        flushPendingFrames()
     }
 
     // subscription callbacks handled above

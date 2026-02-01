@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var progressPanel: NSPanel?
     private var progressIndicator: NSProgressIndicator?
     private var progressLabel: NSTextField?
+    private var progressCancelButton: NSButton?
     private var isShowingProgress = false
     private var lastStatus: String = ""
 
@@ -88,6 +89,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         peripheral = ClipboardPeripheral()
         peripheral?.onProgress = { [weak self] name, progress, sent, total in
             self?.updateProgress(name: name, progress: progress, sent: sent, total: total)
+        }
+        peripheral?.onTransferCanceled = { [weak self] in
+            self?.isShowingProgress = false
+            self?.statusMenuItem.title = "状态: \(self?.lastStatus ?? "")"
+            self?.progressPanel?.orderOut(nil)
         }
         LogCenter.shared.log("App started")
     }
@@ -217,27 +223,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showProgressPanel(name: String) {
         if progressPanel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 120),
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 140),
                                 styleMask: [.titled, .closable],
                                 backing: .buffered,
                                 defer: false)
             panel.title = "发送进度"
 
             let label = NSTextField(labelWithString: "")
-            label.frame = NSRect(x: 20, y: 70, width: 320, height: 20)
+            label.frame = NSRect(x: 20, y: 90, width: 320, height: 20)
 
-            let indicator = NSProgressIndicator(frame: NSRect(x: 20, y: 40, width: 320, height: 12))
+            let indicator = NSProgressIndicator(frame: NSRect(x: 20, y: 60, width: 320, height: 12))
             indicator.isIndeterminate = false
             indicator.minValue = 0
             indicator.maxValue = 1
             indicator.doubleValue = 0
 
+            let cancel = NSButton(title: "取消", target: self, action: #selector(cancelSend))
+            cancel.frame = NSRect(x: 260, y: 20, width: 80, height: 28)
+
             panel.contentView?.addSubview(label)
             panel.contentView?.addSubview(indicator)
+            panel.contentView?.addSubview(cancel)
 
             progressPanel = panel
             progressIndicator = indicator
             progressLabel = label
+            progressCancelButton = cancel
         }
 
         progressLabel?.stringValue = "\(name)"
@@ -260,6 +271,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.progressPanel?.orderOut(nil)
             }
         }
+    }
+
+    @objc private func cancelSend() {
+        peripheral?.cancelCurrentTransfer()
     }
 
     @objc private func speedTest1m() { peripheral?.startSpeedTest(bytes: 1 * 1024 * 1024) }
