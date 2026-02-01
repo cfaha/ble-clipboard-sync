@@ -559,7 +559,7 @@ namespace ClipboardSyncWin
     static class SyncConfig
     {
         public static ulong DeviceId => DeviceIdProvider.GetOrCreate();
-        public const string SharedKeyBase64 = "REPLACE_WITH_BASE64_KEY";
+        public const string SharedKeyBase64 = "tKl/HZaBOndm38qZMtArGBgQa1ZuL26QER+jksZp9NY=";
         public const int CompressionThreshold = 256;
     }
 

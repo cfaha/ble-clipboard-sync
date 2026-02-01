@@ -27,7 +27,7 @@ enum SyncConfig {
     }()
 
     // 16/24/32-byte key, base64 encoded. Must match on both devices.
-    static let sharedKeyBase64 = "REPLACE_WITH_BASE64_KEY"
+    static let sharedKeyBase64 = "tKl/HZaBOndm38qZMtArGBgQa1ZuL26QER+jksZp9NY="
 
     // Compression
     static let compressionThreshold = 256
