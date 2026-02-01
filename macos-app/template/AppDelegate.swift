@@ -31,6 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         allowedMenuItem.submenu = allowedMenu
         menu.addItem(allowedMenuItem)
 
+        let sendFileItem = NSMenuItem(title: "发送文件…", action: #selector(sendFileManually), keyEquivalent: "")
+        menu.addItem(sendFileItem)
+
         let speedTestMenu = NSMenuItem(title: "测速", action: nil, keyEquivalent: "")
         let speedSub = NSMenu(title: "测速")
         speedSub.addItem(withTitle: "1 MB", action: #selector(speedTest1m), keyEquivalent: "")
@@ -187,6 +190,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func saveAllowedSet(_ set: Set<UUID>) {
         let list = set.map { $0.uuidString }
         UserDefaults.standard.set(list, forKey: allowedKey)
+    }
+
+    @objc private func sendFileManually() {
+        guard let peripheral = peripheral else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            peripheral.sendFile(url)
+        }
     }
 
     @objc private func speedTest1m() { peripheral?.startSpeedTest(bytes: 1 * 1024 * 1024) }

@@ -466,6 +466,23 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
         flushPendingFrames()
     }
 
+    func sendFile(_ url: URL) {
+        guard peripheralManager.state == .poweredOn, notifyChar != nil, hasSubscriber else { return }
+        guard let fileData = try? Data(contentsOf: url) else { return }
+        let nameData = url.lastPathComponent.data(using: .utf8) ?? Data()
+        var payload = Data()
+        let nameLen = UInt16(nameData.count)
+        payload.append(UInt8(nameLen >> 8))
+        payload.append(UInt8(nameLen & 0xff))
+        payload.append(nameData)
+        payload.append(fileData)
+        let hash = CryptoHelper.sha256(payload)
+        if LoopState.shouldSkip(hash: hash) { return }
+        let frames = ProtocolEncoder.encode(type: 0x03, payload: payload)
+        LogCenter.shared.log("Send file: \(payload.count) bytes, \(frames.count) frames, name=\(url.lastPathComponent)")
+        sendFrames(frames)
+    }
+
     func startSpeedTest(bytes: Int) {
         guard bytes >= 16 else { return }
         var payload = Data(count: bytes)
@@ -497,24 +514,6 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
         guard peripheralManager.state == .poweredOn, notifyChar != nil, hasSubscriber else {
             return
         }
-        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
-           let first = urls.first,
-           let fileData = try? Data(contentsOf: first) {
-            let nameData = first.lastPathComponent.data(using: .utf8) ?? Data()
-            var payload = Data()
-            let nameLen = UInt16(nameData.count)
-            payload.append(UInt8(nameLen >> 8))
-            payload.append(UInt8(nameLen & 0xff))
-            payload.append(nameData)
-            payload.append(fileData)
-            let hash = CryptoHelper.sha256(payload)
-            if LoopState.shouldSkip(hash: hash) { return }
-            let frames = ProtocolEncoder.encode(type: 0x03, payload: payload)
-            LogCenter.shared.log("Send file: \(payload.count) bytes, \(frames.count) frames, name=\(first.lastPathComponent)")
-            sendFrames(frames)
-            return
-        }
-
         if let text = pasteboard.string(forType: .string) {
             let payload = text.data(using: .utf8) ?? Data()
             let hash = CryptoHelper.sha256(payload)
