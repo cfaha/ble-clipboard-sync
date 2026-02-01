@@ -335,6 +335,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     private let pasteboard = NSPasteboard.general
     private var changeCount: Int = 0
     private var hasSubscriber = false
+    private var pendingFrames: [Data] = []
 
     override init() {
         super.init()
@@ -412,7 +413,12 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
         LogCenter.shared.log("Central unsubscribed: \(central.identifier.uuidString)")
         hasSubscriber = false
+        pendingFrames.removeAll()
         StatusCenter.shared.set(.disconnected)
+    }
+
+    func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
+        flushPendingFrames()
     }
 
     // MARK: - Clipboard Monitor
@@ -494,8 +500,19 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     private func sendFrames(_ frames: [Data]) {
         StatusCenter.shared.bumpTransfer()
-        for frame in frames {
-            _ = peripheralManager.updateValue(frame, for: notifyChar, onSubscribedCentrals: nil)
+        pendingFrames.append(contentsOf: frames)
+        flushPendingFrames()
+    }
+
+    private func flushPendingFrames() {
+        guard notifyChar != nil else { return }
+        while !pendingFrames.isEmpty {
+            let frame = pendingFrames.first!
+            let ok = peripheralManager.updateValue(frame, for: notifyChar, onSubscribedCentrals: nil)
+            if !ok {
+                break
+            }
+            pendingFrames.removeFirst()
         }
     }
 
