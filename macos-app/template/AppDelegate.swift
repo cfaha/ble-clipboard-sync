@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(trustedMenuItem)
 
         autoStartMenuItem = NSMenuItem(title: "开机自启", action: #selector(toggleAutoStart), keyEquivalent: "")
-        autoStartMenuItem.state = AutoLaunchManager.isEnabled ? .on : .off
+        autoStartMenuItem.state = AutoLaunchManager.isEnabled() ? .on : .off
         menu.addItem(autoStartMenuItem)
 
         let exportLogItem = NSMenuItem(title: "导出日志", action: #selector(exportLogs), keyEquivalent: "")
@@ -51,7 +51,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func exportLogs() {
         do {
-            let path = try LogCenter.shared.export()
+            if let url = LogCenter.shared.exportToFile() {
+                let path = url.path
+                let alert = NSAlert()
+                alert.messageText = "日志已导出"
+                alert.informativeText = path
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+                return
+            }
+            throw NSError(domain: "LogCenter", code: -1)
             let alert = NSAlert()
             alert.messageText = "日志已导出"
             alert.informativeText = path
@@ -116,12 +125,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleAutoStart() {
-        if AutoLaunchManager.isEnabled {
-            AutoLaunchManager.disable()
+        if AutoLaunchManager.isEnabled() {
+            AutoLaunchManager.setEnabled(false)
         } else {
-            AutoLaunchManager.enable()
+            AutoLaunchManager.setEnabled(true)
         }
-        autoStartMenuItem.state = AutoLaunchManager.isEnabled ? .on : .off
+        autoStartMenuItem.state = AutoLaunchManager.isEnabled() ? .on : .off
     }
 
     @objc private func quitApp() {
