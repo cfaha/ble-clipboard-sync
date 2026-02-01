@@ -13,7 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.title = "Clip"
+        if let image = NSImage(systemSymbolName: "paperclip", accessibilityDescription: "Clipboard Sync") {
+            image.isTemplate = true
+            statusItem.button?.image = image
+        } else {
+            statusItem.button?.title = "Clip"
+        }
 
         let menu = NSMenu()
         statusMenuItem = NSMenuItem(title: "状态: 启动中…", action: nil, keyEquivalent: "")
@@ -32,9 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let speedTestMenu = NSMenuItem(title: "测速", action: nil, keyEquivalent: "")
         let speedSub = NSMenu(title: "测速")
-        speedSub.addItem(withTitle: "50 KB", action: #selector(speedTest50k), keyEquivalent: "")
-        speedSub.addItem(withTitle: "200 KB", action: #selector(speedTest200k), keyEquivalent: "")
         speedSub.addItem(withTitle: "1 MB", action: #selector(speedTest1m), keyEquivalent: "")
+        speedSub.addItem(withTitle: "10 MB", action: #selector(speedTest10m), keyEquivalent: "")
+        speedSub.addItem(withTitle: "50 MB", action: #selector(speedTest50m), keyEquivalent: "")
+        speedSub.addItem(withTitle: "100 MB", action: #selector(speedTest100m), keyEquivalent: "")
+        speedSub.addItem(withTitle: "500 MB", action: #selector(speedTest500m), keyEquivalent: "")
         speedTestMenu.submenu = speedSub
         menu.addItem(speedTestMenu)
 
@@ -186,9 +193,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(list, forKey: allowedKey)
     }
 
-    @objc private func speedTest50k() { peripheral?.startSpeedTest(bytes: 50 * 1024) }
-    @objc private func speedTest200k() { peripheral?.startSpeedTest(bytes: 200 * 1024) }
-    @objc private func speedTest1m() { peripheral?.startSpeedTest(bytes: 1024 * 1024) }
+    @objc private func speedTest1m() { peripheral?.startSpeedTest(bytes: 1 * 1024 * 1024) }
+    @objc private func speedTest10m() { peripheral?.startSpeedTest(bytes: 10 * 1024 * 1024) }
+    @objc private func speedTest50m() { peripheral?.startSpeedTest(bytes: 50 * 1024 * 1024) }
+    @objc private func speedTest100m() { peripheral?.startSpeedTest(bytes: 100 * 1024 * 1024) }
+    @objc private func speedTest500m() { peripheral?.startSpeedTest(bytes: 500 * 1024 * 1024) }
 
     @objc private func removeTrustedDevice(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UInt64 else { return }
