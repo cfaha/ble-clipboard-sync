@@ -65,13 +65,18 @@ namespace ClipboardSyncWin
             AppStatus.SetConnected(false);
             LogCenter.Log("Start BLE scan");
             _watcher?.Stop();
-            _watcher = new BluetoothLEAdvertisementWatcher();
+            _watcher = new BluetoothLEAdvertisementWatcher
+            {
+                ScanningMode = BluetoothLEScanningMode.Active
+            };
             _watcher.Received += async (w, evt) =>
             {
-                if (evt.Advertisement.LocalName == "BLEClipboardSync")
+                var name = evt.Advertisement.LocalName;
+                var hasService = evt.Advertisement.ServiceUuids.Contains(ServiceUuid);
+                if (name == "BLEClipboardSync" || hasService)
                 {
                     _watcher.Stop();
-                    LogCenter.Log($"Found device: {evt.BluetoothAddress:X}");
+                    LogCenter.Log($"Found device: {evt.BluetoothAddress:X} name={name} service={hasService}");
                     await ConnectAndSync(evt.BluetoothAddress);
                 }
             };
