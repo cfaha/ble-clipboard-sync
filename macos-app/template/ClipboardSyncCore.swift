@@ -381,6 +381,15 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         LogCenter.shared.log("Peripheral state: \(peripheral.state.rawValue)")
+        if peripheral.state == .unauthorized {
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "需要蓝牙权限"
+                alert.informativeText = "请前往 系统设置 → 隐私与安全 → 蓝牙，允许 ClipboardSync 使用蓝牙。"
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
         guard peripheral.state == .poweredOn else {
             StatusCenter.shared.set(.disconnected)
             return

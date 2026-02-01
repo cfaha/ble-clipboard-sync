@@ -44,11 +44,12 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 ### macOS
 1. 下载 `ClipboardSyncMac.zip`，解压得到 `ClipboardSync.app`。
 2. 第一次运行如被系统阻止：右键应用 → 打开。
-3. 系统会弹出 **蓝牙权限** 提示，请选择允许。
+3. 手动开启蓝牙权限：系统设置 → 隐私与安全 → 蓝牙 → 允许 ClipboardSync。
 4. 运行后会出现在菜单栏：
    - 状态：未连接 / 已连接 / 已连接·已加密 / 传输中
    - 「受信任设备」：管理信任与重命名
    - 「允许同步设备」：指定要同步的 Windows 设备（不选则默认全部）
+   - 「发送文件…」：手动发送文件
    - 「测速」：1MB/10MB/50MB/100MB/500MB 测速
 5. Dock 图标已隐藏（如仍出现，请完全退出后再打开）。
 
