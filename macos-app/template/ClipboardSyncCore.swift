@@ -370,6 +370,10 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     private var pendingFrames: [Data] = []
     private var subscribedCentrals: [UUID: CBCentral] = [:]
     private var allowedCentralIds: Set<UUID> = []
+    private var currentTransferName: String?
+    private var currentTransferTotal: Int = 0
+    private var currentTransferSent: Int = 0
+    var onProgress: ((String, Double, Int, Int) -> Void)?
 
     override init() {
         super.init()
@@ -488,6 +492,10 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
         let hash = CryptoHelper.sha256(payload)
         if LoopState.shouldSkip(hash: hash) { return }
         let frames = ProtocolEncoder.encode(type: 0x03, payload: payload)
+        currentTransferName = url.lastPathComponent
+        currentTransferTotal = frames.count
+        currentTransferSent = 0
+        onProgress?(currentTransferName ?? "文件", 0.0, 0, currentTransferTotal)
         LogCenter.shared.log("Send file: \(payload.count) bytes, \(frames.count) frames, name=\(url.lastPathComponent)")
         sendFrames(frames)
     }
@@ -585,6 +593,16 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
                 break
             }
             pendingFrames.removeFirst()
+            if currentTransferTotal > 0 {
+                currentTransferSent += 1
+                let progress = Double(currentTransferSent) / Double(currentTransferTotal)
+                onProgress?(currentTransferName ?? "文件", progress, currentTransferSent, currentTransferTotal)
+                if currentTransferSent >= currentTransferTotal {
+                    currentTransferName = nil
+                    currentTransferTotal = 0
+                    currentTransferSent = 0
+                }
+            }
         }
     }
 

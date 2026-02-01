@@ -10,6 +10,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var autoStartMenuItem: NSMenuItem!
     private var peripheral: ClipboardPeripheral?
     private let allowedKey = "BLEClipboardAllowedCentralUUIDs"
+    private var progressPanel: NSPanel?
+    private var progressIndicator: NSProgressIndicator?
+    private var progressLabel: NSTextField?
+    private var isShowingProgress = false
+    private var lastStatus: String = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -57,7 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         StatusCenter.shared.onUpdate = { [weak self] state in
             let status = state.rawValue
-            self?.statusMenuItem.title = "状态: \(status)"
+            self?.lastStatus = status
+            if self?.isShowingProgress != true {
+                self?.statusMenuItem.title = "状态: \(status)"
+            }
             self?.statusItem.button?.toolTip = status
         }
         StatusCenter.shared.set(.disconnected)
@@ -78,6 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         peripheral = ClipboardPeripheral()
+        peripheral?.onProgress = { [weak self] name, progress, sent, total in
+            self?.updateProgress(name: name, progress: progress, sent: sent, total: total)
+        }
         LogCenter.shared.log("App started")
     }
 
@@ -199,7 +210,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
+            showProgressPanel(name: url.lastPathComponent)
             peripheral.sendFile(url)
+        }
+    }
+
+    private func showProgressPanel(name: String) {
+        if progressPanel == nil {
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 120),
+                                styleMask: [.titled, .closable],
+                                backing: .buffered,
+                                defer: false)
+            panel.title = "发送进度"
+
+            let label = NSTextField(labelWithString: "")
+            label.frame = NSRect(x: 20, y: 70, width: 320, height: 20)
+
+            let indicator = NSProgressIndicator(frame: NSRect(x: 20, y: 40, width: 320, height: 12))
+            indicator.isIndeterminate = false
+            indicator.minValue = 0
+            indicator.maxValue = 1
+            indicator.doubleValue = 0
+
+            panel.contentView?.addSubview(label)
+            panel.contentView?.addSubview(indicator)
+
+            progressPanel = panel
+            progressIndicator = indicator
+            progressLabel = label
+        }
+
+        progressLabel?.stringValue = "\(name)"
+        progressIndicator?.doubleValue = 0
+        progressPanel?.center()
+        progressPanel?.makeKeyAndOrderFront(nil)
+        isShowingProgress = true
+    }
+
+    private func updateProgress(name: String, progress: Double, sent: Int, total: Int) {
+        DispatchQueue.main.async {
+            if self.progressPanel == nil { return }
+            self.progressLabel?.stringValue = "\(name)  (\(sent)/\(total))"
+            self.progressIndicator?.doubleValue = progress
+            let percent = Int(progress * 100)
+            self.statusMenuItem.title = "发送文件 \(percent)%"
+            if progress >= 1.0 {
+                self.isShowingProgress = false
+                self.statusMenuItem.title = "状态: \(self.lastStatus)"
+                self.progressPanel?.orderOut(nil)
+            }
         }
     }
 
