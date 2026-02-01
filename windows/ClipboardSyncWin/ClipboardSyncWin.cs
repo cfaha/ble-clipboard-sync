@@ -51,7 +51,7 @@ namespace ClipboardSyncWin
 
             LogCenter.Log("App started");
             AppStatus.Initialize();
-            StartScan();
+            _ = StartScanAsync();
 
             using var context = new TrayAppContext();
             Application.Run(context);
@@ -60,14 +60,43 @@ namespace ClipboardSyncWin
             if (_device != null) _device.Dispose();
         }
 
-        private static void StartScan()
+        private static async Task StartScanAsync()
         {
             AppStatus.SetConnected(false);
             LogCenter.Log("Start BLE scan");
+
+            try
+            {
+                var adapter = await BluetoothAdapter.GetDefaultAsync();
+                if (adapter == null)
+                {
+                    LogCenter.Log("No Bluetooth adapter found");
+                }
+                else
+                {
+                    LogCenter.Log($"Adapter: LE={adapter.IsLowEnergySupported}, Central={adapter.IsCentralRoleSupported}, Addr={adapter.BluetoothAddress:X}");
+                }
+
+                var radios = await Windows.Devices.Radios.Radio.GetRadiosAsync();
+                var bt = radios.FirstOrDefault(r => r.Kind == Windows.Devices.Radios.RadioKind.Bluetooth);
+                if (bt != null)
+                {
+                    LogCenter.Log($"Bluetooth radio: {bt.State}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogCenter.Log($"Bluetooth init error: {ex.Message}");
+            }
+
             _watcher?.Stop();
             _watcher = new BluetoothLEAdvertisementWatcher
             {
                 ScanningMode = BluetoothLEScanningMode.Active
+            };
+            _watcher.StatusChanged += (w, evt) =>
+            {
+                LogCenter.Log($"Watcher status: {evt.Status}");
             };
             _watcher.Received += async (w, evt) =>
             {
