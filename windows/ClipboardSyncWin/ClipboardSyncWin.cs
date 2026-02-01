@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -64,7 +65,7 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.3-20260201-1708]");
+            LogCenter.Log("App started [v1.0.3-20260201-1713]");
             AppStatus.Initialize();
             _ = StartScanAsync();
 
@@ -1215,15 +1216,13 @@ namespace ClipboardSyncWin
 
                 try
                 {
-                    await UiDispatcher.RunAsync(async () =>
+                    var tempPath = Path.Combine(Path.GetTempPath(), name);
+                    File.WriteAllBytes(tempPath, fileData);
+                    await UiDispatcher.RunAsync(() =>
                     {
-                        var file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(name, CreationCollisionOption.ReplaceExisting);
-                        await FileIO.WriteBytesAsync(file, fileData);
-                        var dp = new DataPackage();
-                        dp.RequestedOperation = DataPackageOperation.Copy;
-                        dp.SetStorageItems(new[] { file }, true);
-                        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
-                        Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
+                        var files = new StringCollection();
+                        files.Add(tempPath);
+                        System.Windows.Forms.Clipboard.SetFileDropList(files);
                     });
                     LoopState.MarkReceived(hash);
                 }
