@@ -199,6 +199,23 @@ final class DeviceTrustCenter {
 }
 
 // MARK: - Status
+final class SpeedTestCenter {
+    static let shared = SpeedTestCenter()
+    private var pending: [UInt64: (Date, Int)] = [:]
+    var onResult: ((Int, TimeInterval, Double) -> Void)?
+
+    func start(token: UInt64, bytes: Int) {
+        pending[token] = (Date(), bytes)
+    }
+
+    func finish(token: UInt64) {
+        guard let (start, bytes) = pending.removeValue(forKey: token) else { return }
+        let elapsed = Date().timeIntervalSince(start)
+        let kbps = elapsed > 0 ? (Double(bytes) / 1024.0) / elapsed : 0
+        onResult?(bytes, elapsed, kbps)
+    }
+}
+
 final class StatusCenter {
     enum State: String {
         case disconnected = "未连接"
@@ -232,7 +249,7 @@ final class StatusCenter {
 // MARK: - Logs
 final class LogCenter {
     static let shared = LogCenter()
-    private let buildTag = "v1.0.3-20260201-1611"
+    private let buildTag = "v1.0.3-20260201-1721"
     private let queue = DispatchQueue(label: "LogCenter.queue")
     private var buffer: [String] = []
     private let maxLines = 1000
@@ -336,6 +353,8 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     private var changeCount: Int = 0
     private var hasSubscriber = false
     private var pendingFrames: [Data] = []
+    private var subscribedCentrals: [UUID: CBCentral] = [:]
+    private var allowedCentralIds: Set<UUID> = []
 
     override init() {
         super.init()
@@ -402,6 +421,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
         LogCenter.shared.log("Central subscribed: \(central.identifier.uuidString)")
         hasSubscriber = true
+        subscribedCentrals[central.identifier] = central
         DeviceTrustCenter.shared.promptOnConnect(central.identifier)
         if CryptoHelper.key != nil {
             StatusCenter.shared.set(.encrypted)
@@ -413,12 +433,34 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
         LogCenter.shared.log("Central unsubscribed: \(central.identifier.uuidString)")
         hasSubscriber = false
+        subscribedCentrals.removeValue(forKey: central.identifier)
         pendingFrames.removeAll()
         StatusCenter.shared.set(.disconnected)
     }
 
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
         flushPendingFrames()
+    }
+
+    func subscribedCentralIds() -> [UUID] {
+        return subscribedCentrals.keys.sorted { $0.uuidString < $1.uuidString }
+    }
+
+    func setAllowedCentrals(_ ids: Set<UUID>) {
+        allowedCentralIds = ids
+        flushPendingFrames()
+    }
+
+    func startSpeedTest(bytes: Int) {
+        guard bytes >= 16 else { return }
+        var payload = Data(count: bytes)
+        let token = UInt64.random(in: UInt64.min...UInt64.max)
+        var tokenBE = token.bigEndian
+        withUnsafeBytes(of: &tokenBE) { payload.replaceSubrange(0..<8, with: $0) }
+        SpeedTestCenter.shared.start(token: token, bytes: bytes)
+        let frames = ProtocolEncoder.encode(type: 0x7E, payload: payload)
+        LogCenter.shared.log("Speed test send: \(bytes) bytes, frames=\(frames.count)")
+        sendFrames(frames)
     }
 
     // MARK: - Clipboard Monitor
@@ -506,9 +548,16 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     private func flushPendingFrames() {
         guard notifyChar != nil else { return }
+        let targets: [CBCentral]?
+        if allowedCentralIds.isEmpty {
+            targets = nil
+        } else {
+            targets = subscribedCentrals.values.filter { allowedCentralIds.contains($0.identifier) }
+            if targets?.isEmpty == true { return }
+        }
         while !pendingFrames.isEmpty {
             let frame = pendingFrames.first!
-            let ok = peripheralManager.updateValue(frame, for: notifyChar, onSubscribedCentrals: nil)
+            let ok = peripheralManager.updateValue(frame, for: notifyChar, onSubscribedCentrals: targets)
             if !ok {
                 break
             }
@@ -765,6 +814,10 @@ struct ProtocolDecoder {
             pasteboard.clearContents()
             pasteboard.writeObjects([tmp as NSURL])
             LoopState.markReceived(hash: hash)
+        case 0x7F:
+            guard content.count >= 8 else { return }
+            let token = content.withUnsafeBytes { $0.load(as: UInt64.self).bigEndian }
+            SpeedTestCenter.shared.finish(token: token)
         default:
             break
         }

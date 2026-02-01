@@ -65,7 +65,7 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.3-20260201-1713]");
+            LogCenter.Log("App started [v1.0.3-20260201-1721]");
             AppStatus.Initialize();
             _ = StartScanAsync();
 
@@ -1230,6 +1230,11 @@ namespace ClipboardSyncWin
                 {
                     LogCenter.Log($"Clipboard set file failed: {ex.Message}");
                 }
+            }
+            else if (type == 0x7E)
+            {
+                LogCenter.Log($"Speed test request: {content.Length} bytes");
+                await SendFramesAsync(ProtocolEncoder.Encode(0x7F, content));
             }
         }
     }

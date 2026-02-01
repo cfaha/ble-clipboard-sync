@@ -5,8 +5,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusMenuItem: NSMenuItem!
     private var trustedMenuItem: NSMenuItem!
     private var trustedMenu: NSMenu!
+    private var allowedMenuItem: NSMenuItem!
+    private var allowedMenu: NSMenu!
     private var autoStartMenuItem: NSMenuItem!
     private var peripheral: ClipboardPeripheral?
+    private let allowedKey = "BLEClipboardAllowedCentralUUIDs"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -21,6 +24,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         trustedMenu = NSMenu(title: "受信任设备")
         trustedMenuItem.submenu = trustedMenu
         menu.addItem(trustedMenuItem)
+
+        allowedMenuItem = NSMenuItem(title: "允许同步设备", action: nil, keyEquivalent: "")
+        allowedMenu = NSMenu(title: "允许同步设备")
+        allowedMenuItem.submenu = allowedMenu
+        menu.addItem(allowedMenuItem)
+
+        let speedTestMenu = NSMenuItem(title: "测速", action: nil, keyEquivalent: "")
+        let speedSub = NSMenu(title: "测速")
+        speedSub.addItem(withTitle: "50 KB", action: #selector(speedTest50k), keyEquivalent: "")
+        speedSub.addItem(withTitle: "200 KB", action: #selector(speedTest200k), keyEquivalent: "")
+        speedSub.addItem(withTitle: "1 MB", action: #selector(speedTest1m), keyEquivalent: "")
+        speedTestMenu.submenu = speedSub
+        menu.addItem(speedTestMenu)
 
         autoStartMenuItem = NSMenuItem(title: "开机自启", action: #selector(toggleAutoStart), keyEquivalent: "")
         autoStartMenuItem.state = AutoLaunchManager.isEnabled() ? .on : .off
@@ -42,8 +58,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         DeviceTrustCenter.shared.onChange = { [weak self] in
             self?.refreshTrustedMenu()
+            self?.refreshAllowedMenu()
         }
         refreshTrustedMenu()
+        refreshAllowedMenu()
+
+        SpeedTestCenter.shared.onResult = { [weak self] bytes, elapsed, kbps in
+            let alert = NSAlert()
+            alert.messageText = "测速结果"
+            alert.informativeText = String(format: "大小: %.1f KB\n耗时: %.2f s\n速度: %.1f KB/s", Double(bytes)/1024.0, elapsed, kbps)
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
 
         peripheral = ClipboardPeripheral()
         LogCenter.shared.log("App started")
@@ -94,6 +120,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func refreshAllowedMenu() {
+        allowedMenu.removeAllItems()
+        guard let peripheral = peripheral else {
+            allowedMenu.addItem(NSMenuItem(title: "(无连接)", action: nil, keyEquivalent: ""))
+            return
+        }
+        let ids = peripheral.subscribedCentralIds()
+        if ids.isEmpty {
+            allowedMenu.addItem(NSMenuItem(title: "(无连接)", action: nil, keyEquivalent: ""))
+        } else {
+            let allowed = loadAllowedSet()
+            for id in ids {
+                let title = id.uuidString
+                let item = NSMenuItem(title: title, action: #selector(toggleAllowedCentral(_:)), keyEquivalent: "")
+                item.state = allowed.contains(id) ? .on : .off
+                item.representedObject = id
+                allowedMenu.addItem(item)
+            }
+            allowedMenu.addItem(NSMenuItem.separator())
+            let clear = NSMenuItem(title: "允许全部", action: #selector(allowAllCentrals), keyEquivalent: "")
+            allowedMenu.addItem(clear)
+        }
+    }
+
     @objc private func renameTrustedDevice(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UInt64 else { return }
         let alert = NSAlert()
@@ -109,6 +159,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DeviceTrustCenter.shared.setAlias(id, alias: input.stringValue)
         }
     }
+
+    @objc private func toggleAllowedCentral(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID else { return }
+        var allowed = loadAllowedSet()
+        if allowed.contains(id) { allowed.remove(id) } else { allowed.insert(id) }
+        saveAllowedSet(allowed)
+        peripheral?.setAllowedCentrals(allowed)
+        refreshAllowedMenu()
+    }
+
+    @objc private func allowAllCentrals() {
+        let empty: Set<UUID> = []
+        saveAllowedSet(empty)
+        peripheral?.setAllowedCentrals(empty)
+        refreshAllowedMenu()
+    }
+
+    private func loadAllowedSet() -> Set<UUID> {
+        let list = UserDefaults.standard.array(forKey: allowedKey) as? [String] ?? []
+        return Set(list.compactMap { UUID(uuidString: $0) })
+    }
+
+    private func saveAllowedSet(_ set: Set<UUID>) {
+        let list = set.map { $0.uuidString }
+        UserDefaults.standard.set(list, forKey: allowedKey)
+    }
+
+    @objc private func speedTest50k() { peripheral?.startSpeedTest(bytes: 50 * 1024) }
+    @objc private func speedTest200k() { peripheral?.startSpeedTest(bytes: 200 * 1024) }
+    @objc private func speedTest1m() { peripheral?.startSpeedTest(bytes: 1024 * 1024) }
 
     @objc private func removeTrustedDevice(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UInt64 else { return }
