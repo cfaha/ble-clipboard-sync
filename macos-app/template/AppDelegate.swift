@@ -1,0 +1,130 @@
+import AppKit
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private var statusMenuItem: NSMenuItem!
+    private var trustedMenuItem: NSMenuItem!
+    private var trustedMenu: NSMenu!
+    private var autoStartMenuItem: NSMenuItem!
+    private var peripheral: ClipboardPeripheral?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.button?.title = "Clip"
+
+        let menu = NSMenu()
+        statusMenuItem = NSMenuItem(title: "状态: 启动中…", action: nil, keyEquivalent: "")
+        statusMenuItem.isEnabled = false
+        menu.addItem(statusMenuItem)
+
+        trustedMenuItem = NSMenuItem(title: "受信任设备", action: nil, keyEquivalent: "")
+        trustedMenu = NSMenu(title: "受信任设备")
+        trustedMenuItem.submenu = trustedMenu
+        menu.addItem(trustedMenuItem)
+
+        autoStartMenuItem = NSMenuItem(title: "开机自启", action: #selector(toggleAutoStart), keyEquivalent: "")
+        autoStartMenuItem.state = AutoLaunchManager.isEnabled ? .on : .off
+        menu.addItem(autoStartMenuItem)
+
+        let exportLogItem = NSMenuItem(title: "导出日志", action: #selector(exportLogs), keyEquivalent: "")
+        menu.addItem(exportLogItem)
+
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q"))
+        statusItem.menu = menu
+
+        StatusCenter.shared.onUpdate = { [weak self] state in
+            let status = state.rawValue
+            self?.statusMenuItem.title = "状态: \(status)"
+            self?.statusItem.button?.toolTip = status
+        }
+        StatusCenter.shared.set(.disconnected)
+
+        DeviceTrustCenter.shared.onChange = { [weak self] in
+            self?.refreshTrustedMenu()
+        }
+        refreshTrustedMenu()
+
+        peripheral = ClipboardPeripheral()
+        LogCenter.shared.log("App started")
+    }
+
+    @objc private func exportLogs() {
+        do {
+            let path = try LogCenter.shared.export()
+            let alert = NSAlert()
+            alert.messageText = "日志已导出"
+            alert.informativeText = path
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "日志导出失败"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
+    }
+
+    private func refreshTrustedMenu() {
+        trustedMenu.removeAllItems()
+        let devices = DeviceTrustCenter.shared.allTrusted()
+        if devices.isEmpty {
+            trustedMenu.addItem(NSMenuItem(title: "(空)", action: nil, keyEquivalent: ""))
+        } else {
+            for id in devices {
+                let item = NSMenuItem(title: DeviceTrustCenter.shared.displayName(id), action: nil, keyEquivalent: "")
+                let sub = NSMenu(title: "操作")
+                let rename = NSMenuItem(title: "重命名…", action: #selector(renameTrustedDevice(_:)), keyEquivalent: "")
+                rename.representedObject = id
+                let remove = NSMenuItem(title: "移除", action: #selector(removeTrustedDevice(_:)), keyEquivalent: "")
+                remove.representedObject = id
+                sub.addItem(rename)
+                sub.addItem(remove)
+                item.submenu = sub
+                trustedMenu.addItem(item)
+            }
+            trustedMenu.addItem(NSMenuItem.separator())
+            let clear = NSMenuItem(title: "清空", action: #selector(clearTrustedDevices), keyEquivalent: "")
+            trustedMenu.addItem(clear)
+        }
+    }
+
+    @objc private func renameTrustedDevice(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UInt64 else { return }
+        let alert = NSAlert()
+        alert.messageText = "重命名设备"
+        alert.informativeText = "输入新的别名："
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        input.stringValue = DeviceTrustCenter.shared.alias(for: id) ?? ""
+        alert.accessoryView = input
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        let resp = alert.runModal()
+        if resp == .alertFirstButtonReturn {
+            DeviceTrustCenter.shared.setAlias(id, alias: input.stringValue)
+        }
+    }
+
+    @objc private func removeTrustedDevice(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UInt64 else { return }
+        DeviceTrustCenter.shared.remove(id)
+    }
+
+    @objc private func clearTrustedDevices() {
+        DeviceTrustCenter.shared.clear()
+    }
+
+    @objc private func toggleAutoStart() {
+        if AutoLaunchManager.isEnabled {
+            AutoLaunchManager.disable()
+        } else {
+            AutoLaunchManager.enable()
+        }
+        autoStartMenuItem.state = AutoLaunchManager.isEnabled ? .on : .off
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
+    }
+}
