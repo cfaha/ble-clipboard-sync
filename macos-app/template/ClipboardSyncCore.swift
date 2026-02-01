@@ -349,7 +349,9 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             StatusCenter.shared.set(.disconnected)
             return
         }
+        LogCenter.shared.log("Setting up GATT service")
         setupService()
+        LogCenter.shared.log("Starting advertising")
         startAdvertising()
     }
 
@@ -377,6 +379,22 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             CBAdvertisementDataLocalNameKey: "BLEClipboardSync",
             CBAdvertisementDataServiceUUIDsKey: [serviceUUID]
         ])
+    }
+
+    func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
+        if let error = error {
+            LogCenter.shared.log("Add service failed: \(error.localizedDescription)")
+        } else {
+            LogCenter.shared.log("Service added: \(service.uuid.uuidString)")
+        }
+    }
+
+    func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
+        if let error = error {
+            LogCenter.shared.log("Advertising failed: \(error.localizedDescription)")
+        } else {
+            LogCenter.shared.log("Advertising started")
+        }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
