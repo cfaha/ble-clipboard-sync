@@ -54,8 +54,10 @@ final class DeviceTrustCenter {
     static let shared = DeviceTrustCenter()
     private let key = "BLEClipboardTrustedDevices"
     private let aliasKey = "BLEClipboardTrustedDeviceAliases"
+    private let knownCentralKey = "BLEClipboardKnownCentrals"
     private var trusted: Set<UInt64> = []
     private var aliases: [UInt64: String] = [:]
+    private var knownCentrals: Set<String> = []
     private var allowNextUnknown = false
     var onChange: (() -> Void)?
 
@@ -127,6 +129,11 @@ final class DeviceTrustCenter {
     }
 
     func promptOnConnect(_ centralId: UUID) {
+        let id = centralId.uuidString
+        if knownCentrals.contains(id) {
+            allowNextUnknown = true
+            return
+        }
         let prompt = {
             let alert = NSAlert()
             alert.messageText = "允许此设备连接？"
@@ -142,6 +149,10 @@ final class DeviceTrustCenter {
             var ok = false
             DispatchQueue.main.sync { ok = prompt() }
             allowed = ok
+        }
+        if allowed {
+            knownCentrals.insert(id)
+            save()
         }
         allowNextUnknown = allowed
     }
@@ -160,6 +171,9 @@ final class DeviceTrustCenter {
             }
             aliases = mapped
         }
+        if let list = defaults.array(forKey: knownCentralKey) as? [String] {
+            knownCentrals = Set(list)
+        }
     }
 
     private func save() {
@@ -174,6 +188,7 @@ final class DeviceTrustCenter {
             }
         }
         defaults.set(dict, forKey: aliasKey)
+        defaults.set(Array(knownCentrals), forKey: knownCentralKey)
         onChange?()
     }
 
