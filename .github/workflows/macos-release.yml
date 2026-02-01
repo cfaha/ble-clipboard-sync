@@ -1,0 +1,40 @@
+name: macos-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build app
+        run: |
+          cd macos-app
+          xcodebuild -project template.xcodeproj -scheme template -configuration Release -derivedDataPath build
+
+      - name: Package
+        run: |
+          cd macos-app
+          APP_PATH=$(find build/Build/Products/Release -name "*.app" -maxdepth 1 | head -n 1)
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" ClipboardSyncMac.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipboardSyncMac
+          path: macos-app/ClipboardSyncMac.zip
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: macos-app/ClipboardSyncMac.zip
