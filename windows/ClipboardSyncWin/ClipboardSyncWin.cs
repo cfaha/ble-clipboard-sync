@@ -94,10 +94,7 @@ namespace ClipboardSyncWin
             {
                 ScanningMode = BluetoothLEScanningMode.Active
             };
-            _watcher.StatusChanged += (w, evt) =>
-            {
-                LogCenter.Log($"Watcher status: {evt.Status}");
-            };
+            // StatusChanged not available on this SDK
             _watcher.Received += async (w, evt) =>
             {
                 var name = evt.Advertisement.LocalName;
@@ -129,7 +126,7 @@ namespace ClipboardSyncWin
                 {
                     AppStatus.SetConnected(false);
                     LogCenter.Log("Disconnected. Re-scanning...");
-                    StartScan();
+                    _ = StartScanAsync();
                 }
             };
 
