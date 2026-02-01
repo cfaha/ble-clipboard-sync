@@ -49,6 +49,7 @@ namespace ClipboardSyncWin
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+            UiDispatcher.Initialize(SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext());
 
             AppDomain.CurrentDomain.UnhandledException += (s, e) =>
             {
@@ -63,7 +64,7 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.3-20260201-1638]");
+            LogCenter.Log("App started [v1.0.3-20260201-1641]");
             AppStatus.Initialize();
             _ = StartScanAsync();
 
@@ -491,6 +492,73 @@ namespace ClipboardSyncWin
             var path = Path.Combine(LogDir, filename);
             File.WriteAllLines(path, lines, Encoding.UTF8);
             return path;
+        }
+    }
+
+    static class UiDispatcher
+    {
+        private static SynchronizationContext? _ctx;
+
+        public static void Initialize(SynchronizationContext ctx)
+        {
+            _ctx = ctx;
+        }
+
+        public static Task RunAsync(Action action)
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            var ctx = _ctx;
+            if (ctx == null)
+            {
+                try
+                {
+                    action();
+                    tcs.SetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+                return tcs.Task;
+            }
+
+            ctx.Post(_ =>
+            {
+                try
+                {
+                    action();
+                    tcs.SetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            }, null);
+            return tcs.Task;
+        }
+
+        public static Task RunAsync(Func<Task> action)
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            var ctx = _ctx;
+            if (ctx == null)
+            {
+                return action();
+            }
+
+            ctx.Post(async _ =>
+            {
+                try
+                {
+                    await action();
+                    tcs.SetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            }, null);
+            return tcs.Task;
         }
     }
 
@@ -1106,8 +1174,15 @@ namespace ClipboardSyncWin
                 var text = Encoding.UTF8.GetString(content);
                 var dp = new DataPackage();
                 dp.SetText(text);
-                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
-                LoopState.MarkReceived(hash);
+                try
+                {
+                    await UiDispatcher.RunAsync(() => Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp));
+                    LoopState.MarkReceived(hash);
+                }
+                catch (Exception ex)
+                {
+                    LogCenter.Log($"Clipboard set text failed: {ex.Message}");
+                }
             }
             else if (type == 0x02)
             {
@@ -1119,8 +1194,15 @@ namespace ClipboardSyncWin
                 stream.Seek(0);
                 var dp = new DataPackage();
                 dp.SetBitmap(RandomAccessStreamReference.CreateFromStream(stream));
-                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
-                LoopState.MarkReceived(hash);
+                try
+                {
+                    await UiDispatcher.RunAsync(() => Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp));
+                    LoopState.MarkReceived(hash);
+                }
+                catch (Exception ex)
+                {
+                    LogCenter.Log($"Clipboard set image failed: {ex.Message}");
+                }
             }
             else if (type == 0x03)
             {
@@ -1131,13 +1213,22 @@ namespace ClipboardSyncWin
                 var fileData = new byte[content.Length - 2 - nameLen];
                 System.Buffer.BlockCopy(content, 2 + nameLen, fileData, 0, fileData.Length);
 
-                var file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(name, CreationCollisionOption.ReplaceExisting);
-                await FileIO.WriteBytesAsync(file, fileData);
-
-                var dp = new DataPackage();
-                dp.SetStorageItems(new[] { file });
-                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
-                LoopState.MarkReceived(hash);
+                try
+                {
+                    await UiDispatcher.RunAsync(async () =>
+                    {
+                        var file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(name, CreationCollisionOption.ReplaceExisting);
+                        await FileIO.WriteBytesAsync(file, fileData);
+                        var dp = new DataPackage();
+                        dp.SetStorageItems(new[] { file });
+                        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+                    });
+                    LoopState.MarkReceived(hash);
+                }
+                catch (Exception ex)
+                {
+                    LogCenter.Log($"Clipboard set file failed: {ex.Message}");
+                }
             }
         }
     }
