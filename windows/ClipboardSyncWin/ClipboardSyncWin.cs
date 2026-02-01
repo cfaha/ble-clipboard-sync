@@ -22,6 +22,7 @@ namespace ClipboardSyncWin
 {
     class Program
     {
+        internal static Func<IEnumerable<byte[]>, Task>? SendFramesAsyncDelegate;
         private static readonly Guid ServiceUuid = Guid.Parse("A1B2C3D4-0000-1000-8000-00805F9B34FB");
         private static readonly Guid NotifyUuid = Guid.Parse("A1B2C3D4-0001-1000-8000-00805F9B34FB");
         private static readonly Guid WriteUuid = Guid.Parse("A1B2C3D4-0002-1000-8000-00805F9B34FB");
@@ -65,8 +66,9 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.3-20260201-1721]");
+            LogCenter.Log("App started [v1.0.4-20260201-1727]");
             AppStatus.Initialize();
+            SendFramesAsyncDelegate = SendFramesAsync;
             _ = StartScanAsync();
 
             using var context = new TrayAppContext();
@@ -1234,7 +1236,10 @@ namespace ClipboardSyncWin
             else if (type == 0x7E)
             {
                 LogCenter.Log($"Speed test request: {content.Length} bytes");
-                await SendFramesAsync(ProtocolEncoder.Encode(0x7F, content));
+                if (Program.SendFramesAsyncDelegate != null)
+                {
+                    await Program.SendFramesAsyncDelegate(ProtocolEncoder.Encode(0x7F, content));
+                }
             }
         }
     }
