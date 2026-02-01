@@ -40,6 +40,31 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 - **macOS**：需要 AppKit App（非纯命令行），使用 `NSApplication` + `NSStatusBar` 显示菜单栏项
 - **Windows**：需要 WinForms 支持（`UseWindowsForms=true` + `[STAThread]`），用于 `NotifyIcon`
 
+## 使用说明（用户）
+### macOS
+1. 下载 `ClipboardSyncMac.zip`，解压得到 `ClipboardSync.app`。
+2. 第一次运行如被系统阻止：右键应用 → 打开。
+3. 系统会弹出 **蓝牙权限** 提示，请选择允许。
+4. 运行后会出现在菜单栏：
+   - 状态：未连接 / 已连接 / 已连接·已加密 / 传输中
+   - 「受信任设备」：管理信任与重命名
+   - 「允许同步设备」：指定要同步的 Windows 设备（不选则默认全部）
+   - 「测速」：1MB/10MB/50MB/100MB/500MB 测速
+5. Dock 图标已隐藏（如仍出现，请完全退出后再打开）。
+
+### Windows
+1. 下载 `ClipboardSyncWin-win-x64.zip`，解压运行。
+2. 托盘图标出现在通知区域（右下角）。
+3. **第一次使用请确保：**
+   - 蓝牙已开启
+   - Windows 位置服务开启（BLE 扫描依赖定位权限）
+4. 连接成功后托盘显示状态：未连接 / 已连接 / 已连接·已加密 / 传输中。
+
+### 常见问题
+- **Windows 扫描不到设备**：请开启 Windows 位置服务；确认 mac 菜单栏显示“已连接/未连接”。
+- **mac 一直提示蓝牙权限**：系统强制用户授权，需保持 App 名称/包名一致，避免重复授权。
+- **文件粘贴失败**：请确保是新版本（带文件粘贴修复）。
+
 ## 使用步骤（开发者）
 ### macOS
 1. 使用 `macos-app/template.xcodeproj`（已内置模板工程）
