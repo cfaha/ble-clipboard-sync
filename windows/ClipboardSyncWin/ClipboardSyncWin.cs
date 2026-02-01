@@ -64,7 +64,7 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.3-20260201-1641]");
+            LogCenter.Log("App started [v1.0.3-20260201-1708]");
             AppStatus.Initialize();
             _ = StartScanAsync();
 
@@ -1220,8 +1220,10 @@ namespace ClipboardSyncWin
                         var file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(name, CreationCollisionOption.ReplaceExisting);
                         await FileIO.WriteBytesAsync(file, fileData);
                         var dp = new DataPackage();
-                        dp.SetStorageItems(new[] { file });
+                        dp.RequestedOperation = DataPackageOperation.Copy;
+                        dp.SetStorageItems(new[] { file }, true);
                         Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+                        Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
                     });
                     LoopState.MarkReceived(hash);
                 }
