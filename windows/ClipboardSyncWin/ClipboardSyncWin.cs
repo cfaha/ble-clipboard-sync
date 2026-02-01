@@ -48,6 +48,7 @@ namespace ClipboardSyncWin
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
 
             AppDomain.CurrentDomain.UnhandledException += (s, e) =>
             {
@@ -62,7 +63,7 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.3-20260201-1631]");
+            LogCenter.Log("App started [v1.0.3-20260201-1638]");
             AppStatus.Initialize();
             _ = StartScanAsync();
 
@@ -262,7 +263,7 @@ namespace ClipboardSyncWin
 
         public TrayAppContext()
         {
-            _syncContext = SynchronizationContext.Current ?? new SynchronizationContext();
+            _syncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
             var menu = new ContextMenuStrip();
             _statusItem = new ToolStripMenuItem("Status: starting…") { Enabled = false };
             _trustedMenuItem = new ToolStripMenuItem("受信任设备");
