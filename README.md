@@ -42,8 +42,8 @@ windows/ClipboardSyncWin/     # Windows (.NET + Windows.Devices.Bluetooth)
 
 ## 使用步骤（开发者）
 ### macOS
-1. 打开 `mac/ClipboardSyncMac` 用 Xcode 创建 **macOS App（建议 Menu Bar App / AppKit）**
-2. 将 `ClipboardSyncMac.swift` 复制到工程
+1. 使用 `macos-app/template.xcodeproj`（已内置模板工程）
+2. 将 `mac/ClipboardSyncMac/ClipboardSyncMac.swift` 添加到工程 target
 3. 配置 `SyncConfig.sharedKeyBase64`
 4. 启用蓝牙权限（Info.plist 添加 `NSBluetoothAlwaysUsageDescription`）
 5. 运行后会出现在菜单栏（状态：未连接 / 已连接 / 已连接·已加密 / 传输中），首次连接会弹出“是否信任此设备”提示，开始广播（DeviceId 将自动生成并持久化）
