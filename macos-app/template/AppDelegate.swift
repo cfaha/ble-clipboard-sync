@@ -13,7 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let image = NSImage(systemSymbolName: "paperclip", accessibilityDescription: "Clipboard Sync") {
+        if let image = NSImage(named: "StatusIcon") {
+            image.isTemplate = true
+            statusItem.button?.image = image
+        } else if let image = NSImage(systemSymbolName: "paperclip", accessibilityDescription: "Clipboard Sync") {
             image.isTemplate = true
             statusItem.button?.image = image
         } else {

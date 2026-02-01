@@ -4,6 +4,8 @@
 <dict>
     <key>CFBundleDisplayName</key>
     <string>ClipboardSync</string>
+    <key>CFBundleName</key>
+    <string>ClipboardSync</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Used for BLE clipboard sync between Mac and Windows.</string>
     <key>LSUIElement</key>
