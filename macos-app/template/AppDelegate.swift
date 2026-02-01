@@ -13,15 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let image = NSImage(named: "StatusIcon") {
-            image.isTemplate = true
-            statusItem.button?.image = image
-        } else if let image = NSImage(systemSymbolName: "paperclip", accessibilityDescription: "Clipboard Sync") {
-            image.isTemplate = true
-            statusItem.button?.image = image
-        } else {
-            statusItem.button?.title = "Clip"
-        }
+        statusItem.button?.image = nil
+        statusItem.button?.title = "N"
 
         let menu = NSMenu()
         statusMenuItem = NSMenuItem(title: "状态: 启动中…", action: nil, keyEquivalent: "")
