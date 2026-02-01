@@ -49,7 +49,20 @@ namespace ClipboardSyncWin
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            LogCenter.Log("App started [v1.0.3-20260201-1611]");
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+            {
+                LogCenter.Log($"Unhandled exception: {e.ExceptionObject}");
+            };
+            Application.ThreadException += (s, e) =>
+            {
+                LogCenter.Log($"Thread exception: {e.Exception}");
+            };
+            TaskScheduler.UnobservedTaskException += (s, e) =>
+            {
+                LogCenter.Log($"Task exception: {e.Exception}");
+            };
+
+            LogCenter.Log("App started [v1.0.3-20260201-1623]");
             AppStatus.Initialize();
             _ = StartScanAsync();
 
