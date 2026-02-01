@@ -62,7 +62,7 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.3-20260201-1623]");
+            LogCenter.Log("App started [v1.0.3-20260201-1631]");
             AppStatus.Initialize();
             _ = StartScanAsync();
 
@@ -455,6 +455,8 @@ namespace ClipboardSyncWin
         private static readonly object Locker = new object();
         private static readonly List<string> Buffer = new List<string>();
         private const int MaxLines = 1000;
+        private static readonly string LogDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipboardSyncWin", "logs");
+        private static readonly string LiveLogPath = Path.Combine(LogDir, "clipboard-sync-live.log");
 
         public static void Log(string message)
         {
@@ -468,6 +470,12 @@ namespace ClipboardSyncWin
                 }
             }
             try { Console.WriteLine(line); } catch { }
+            try
+            {
+                Directory.CreateDirectory(LogDir);
+                File.AppendAllText(LiveLogPath, line + Environment.NewLine, Encoding.UTF8);
+            }
+            catch { }
         }
 
         public static string ExportToFile()
@@ -477,10 +485,9 @@ namespace ClipboardSyncWin
             {
                 lines = Buffer.ToArray();
             }
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipboardSyncWin", "logs");
-            Directory.CreateDirectory(dir);
+            Directory.CreateDirectory(LogDir);
             var filename = $"clipboard-sync-{DateTime.Now:yyyyMMdd-HHmmss}.log";
-            var path = Path.Combine(dir, filename);
+            var path = Path.Combine(LogDir, filename);
             File.WriteAllLines(path, lines, Encoding.UTF8);
             return path;
         }
