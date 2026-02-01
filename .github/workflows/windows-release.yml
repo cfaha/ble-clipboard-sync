@@ -50,6 +50,10 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $retries = 3
           for ($i = 1; $i -le $retries; $i++) {
+            gh release view $tag | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              gh release create $tag -t $tag -n "" | Out-Null
+            }
             gh release upload $tag ClipboardSyncWin-win-x64.zip --clobber
             if ($LASTEXITCODE -eq 0) { exit 0 }
             Start-Sleep -Seconds 2
