@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var allowedMenuItem: NSMenuItem!
     private var allowedMenu: NSMenu!
     private var autoStartMenuItem: NSMenuItem!
+    private var historyMenuItem: NSMenuItem!
+    private var historyMenu: NSMenu!
     private var peripheral: ClipboardPeripheral?
     private let allowedKey = "BLEClipboardAllowedCentralUUIDs"
     private var progressPanel: NSPanel?
@@ -39,6 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let sendFileItem = NSMenuItem(title: "发送文件…", action: #selector(sendFileManually), keyEquivalent: "")
         menu.addItem(sendFileItem)
+
+        historyMenuItem = NSMenuItem(title: "历史剪贴板", action: nil, keyEquivalent: "")
+        historyMenu = NSMenu(title: "历史剪贴板")
+        historyMenuItem.submenu = historyMenu
+        menu.addItem(historyMenuItem)
 
         let speedTestMenu = NSMenuItem(title: "测速", action: nil, keyEquivalent: "")
         let speedSub = NSMenu(title: "测速")
@@ -85,6 +92,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: "OK")
             alert.runModal()
         }
+
+        HistoryCenter.shared.onChange = { [weak self] in
+            self?.refreshHistoryMenu()
+        }
+        refreshHistoryMenu()
 
         peripheral = ClipboardPeripheral()
         peripheral?.onProgress = { [weak self] name, progress, sent, total in
@@ -165,6 +177,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let clear = NSMenuItem(title: "允许全部", action: #selector(allowAllCentrals), keyEquivalent: "")
             allowedMenu.addItem(clear)
         }
+    }
+
+    private func refreshHistoryMenu() {
+        historyMenu.removeAllItems()
+        let items = HistoryCenter.shared.allItems()
+        if items.isEmpty {
+            historyMenu.addItem(NSMenuItem(title: "(空)", action: nil, keyEquivalent: ""))
+            return
+        }
+        for (idx, item) in items.enumerated() {
+            let type = item["type"] ?? "text"
+            let title: String
+            if type == "image" {
+                title = "图片 #\(idx + 1)"
+            } else {
+                let text = item["text"] ?? ""
+                title = text.count > 30 ? String(text.prefix(30)) + "…" : text
+            }
+            let menuItem = NSMenuItem(title: title, action: #selector(selectHistoryItem(_:)), keyEquivalent: "")
+            menuItem.representedObject = idx
+            historyMenu.addItem(menuItem)
+        }
+        historyMenu.addItem(NSMenuItem.separator())
+        let config = NSMenuItem(title: "设置保留条数…", action: #selector(configureHistoryMax), keyEquivalent: "")
+        historyMenu.addItem(config)
+        let clear = NSMenuItem(title: "清空历史", action: #selector(clearHistory), keyEquivalent: "")
+        historyMenu.addItem(clear)
     }
 
     @objc private func renameTrustedDevice(_ sender: NSMenuItem) {
@@ -275,6 +314,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func cancelSend() {
         peripheral?.cancelCurrentTransfer()
+    }
+
+    @objc private func selectHistoryItem(_ sender: NSMenuItem) {
+        guard let idx = sender.representedObject as? Int else { return }
+        let items = HistoryCenter.shared.allItems()
+        guard idx < items.count else { return }
+        let item = items[idx]
+        let type = item["type"] ?? "text"
+        if type == "image", let b64 = item["data"], let data = Data(base64Encoded: b64), let image = NSImage(data: data) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([image])
+        } else if let text = item["text"] {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
+    }
+
+    @objc private func configureHistoryMax() {
+        let alert = NSAlert()
+        alert.messageText = "设置历史条数"
+        alert.informativeText = "输入要保留的条数："
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 120, height: 24))
+        input.stringValue = String(HistoryCenter.shared.maxItems)
+        alert.accessoryView = input
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        let resp = alert.runModal()
+        if resp == .alertFirstButtonReturn, let value = Int(input.stringValue), value > 0 {
+            HistoryCenter.shared.maxItems = value
+        }
+    }
+
+    @objc private func clearHistory() {
+        HistoryCenter.shared.clear()
     }
 
     @objc private func speedTest1m() { peripheral?.startSpeedTest(bytes: 1 * 1024 * 1024) }

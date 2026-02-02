@@ -261,6 +261,60 @@ final class StatusCenter {
     }
 }
 
+// MARK: - History
+final class HistoryCenter {
+    static let shared = HistoryCenter()
+    private let key = "BLEClipboardHistoryItems"
+    private let maxKey = "BLEClipboardHistoryMax"
+    private let queue = DispatchQueue(label: "HistoryCenter.queue")
+    private var items: [[String: String]] = []
+    var onChange: (() -> Void)?
+
+    var maxItems: Int {
+        get { UserDefaults.standard.integer(forKey: maxKey) == 0 ? 50 : UserDefaults.standard.integer(forKey: maxKey) }
+        set { UserDefaults.standard.set(newValue, forKey: maxKey) }
+    }
+
+    private init() { load() }
+
+    func allItems() -> [[String: String]] {
+        return queue.sync { items }
+    }
+
+    func clear() {
+        queue.sync { items.removeAll() }
+        save()
+    }
+
+    func addText(_ text: String) {
+        add(item: ["type": "text", "text": text])
+    }
+
+    func addImage(_ data: Data) {
+        let b64 = data.base64EncodedString()
+        add(item: ["type": "image", "data": b64])
+    }
+
+    private func add(item: [String: String]) {
+        queue.sync {
+            items.insert(item, at: 0)
+            if items.count > maxItems { items.removeLast(items.count - maxItems) }
+        }
+        save()
+    }
+
+    private func load() {
+        if let arr = UserDefaults.standard.array(forKey: key) as? [[String: String]] {
+            items = arr
+        }
+    }
+
+    private func save() {
+        UserDefaults.standard.set(items, forKey: key)
+        onChange?()
+    }
+}
+
 // MARK: - Logs
 final class LogCenter {
     static let shared = LogCenter()
@@ -540,6 +594,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             if LoopState.shouldSkip(hash: hash) { return }
             let frames = ProtocolEncoder.encode(type: 0x01, payload: payload)
             LogCenter.shared.log("Send text: \(payload.count) bytes, \(frames.count) frames")
+            HistoryCenter.shared.addText(text)
             sendFrames(frames)
             return
         }
@@ -551,6 +606,7 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
             if LoopState.shouldSkip(hash: hash) { return }
             let frames = ProtocolEncoder.encode(type: 0x02, payload: png)
             LogCenter.shared.log("Send image: \(png.count) bytes, \(frames.count) frames")
+            HistoryCenter.shared.addImage(png)
             sendFrames(frames)
             return
         }
@@ -852,12 +908,14 @@ struct ProtocolDecoder {
             if let text = String(data: content, encoding: .utf8) {
                 pasteboard.clearContents()
                 pasteboard.setString(text, forType: .string)
+                HistoryCenter.shared.addText(text)
                 LoopState.markReceived(hash: hash)
             }
         case 0x02:
             if let image = NSImage(data: content) {
                 pasteboard.clearContents()
                 pasteboard.writeObjects([image])
+                HistoryCenter.shared.addImage(content)
                 LoopState.markReceived(hash: hash)
             }
         case 0x03:
