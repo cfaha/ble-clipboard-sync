@@ -66,7 +66,7 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.4-20260201-1727]");
+            LogCenter.Log("App started [v1.0.4-20260202-1134]");
             AppStatus.Initialize();
             SendFramesAsyncDelegate = SendFramesAsync;
             _ = StartScanAsync();
@@ -190,6 +190,7 @@ namespace ClipboardSyncWin
                         var hash = CryptoHelper.Sha256(payload);
                         if (LoopState.ShouldSkip(hash)) return;
                         LogCenter.Log($"Send text: {payload.Length} bytes");
+                        HistoryCenter.AddText(text ?? string.Empty);
                         await SendFramesAsync(ProtocolEncoder.Encode(0x01, payload));
                         return;
                     }
@@ -202,6 +203,7 @@ namespace ClipboardSyncWin
                             var hash = CryptoHelper.Sha256(bytes);
                             if (LoopState.ShouldSkip(hash)) return;
                             LogCenter.Log($"Send image: {bytes.Length} bytes");
+                            HistoryCenter.AddImage(bytes);
                             await SendFramesAsync(ProtocolEncoder.Encode(0x02, bytes));
                             return;
                         }
@@ -275,6 +277,9 @@ namespace ClipboardSyncWin
             _autoStartItem = new ToolStripMenuItem("开机自启") { CheckOnClick = true };
             _autoStartItem.Checked = AutoStartManager.IsEnabled();
             _autoStartItem.Click += (_, __) => ToggleAutoStart();
+            var historyItem = new ToolStripMenuItem("历史剪贴板");
+            historyItem.DropDownOpening += (_, __) => RefreshHistoryMenu(historyItem);
+
             var exportLogItem = new ToolStripMenuItem("导出日志");
             exportLogItem.Click += (_, __) => ExportLogs();
             var quitItem = new ToolStripMenuItem("Quit");
@@ -282,6 +287,7 @@ namespace ClipboardSyncWin
             menu.Items.Add(_statusItem);
             menu.Items.Add(_trustedMenuItem);
             menu.Items.Add(_autoStartItem);
+            menu.Items.Add(historyItem);
             menu.Items.Add(exportLogItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(quitItem);
@@ -365,6 +371,70 @@ namespace ClipboardSyncWin
                 Update();
             else
                 _syncContext.Post(_ => Update(), null);
+        }
+
+        private void RefreshHistoryMenu(ToolStripMenuItem root)
+        {
+            root.DropDownItems.Clear();
+            var items = HistoryCenter.AllItems();
+            if (items.Count == 0)
+            {
+                root.DropDownItems.Add(new ToolStripMenuItem("（空）") { Enabled = false });
+            }
+            else
+            {
+                for (int i = 0; i < items.Count; i++)
+                {
+                    var item = items[i];
+                    string title = item.Type == "image" ? $"图片 #{i + 1}" : Truncate(item.Text, 30);
+                    var menu = new ToolStripMenuItem(title);
+                    menu.Click += (_, __) => RestoreHistory(item);
+                    root.DropDownItems.Add(menu);
+                }
+                root.DropDownItems.Add(new ToolStripSeparator());
+            }
+
+            var cfg = new ToolStripMenuItem("设置保留条数…");
+            cfg.Click += (_, __) => ConfigureHistoryMax();
+            root.DropDownItems.Add(cfg);
+
+            var clear = new ToolStripMenuItem("清空历史");
+            clear.Click += (_, __) => HistoryCenter.Clear();
+            root.DropDownItems.Add(clear);
+        }
+
+        private static string Truncate(string? text, int max)
+        {
+            text ??= string.Empty;
+            return text.Length > max ? text.Substring(0, max) + "…" : text;
+        }
+
+        private void RestoreHistory(HistoryItem item)
+        {
+            if (item.Type == "image" && !string.IsNullOrEmpty(item.Data))
+            {
+                var bytes = Convert.FromBase64String(item.Data);
+                var stream = new InMemoryRandomAccessStream();
+                var writer = new DataWriter(stream);
+                writer.WriteBytes(bytes);
+                writer.StoreAsync().AsTask().Wait();
+                writer.FlushAsync().AsTask().Wait();
+                stream.Seek(0);
+                var dp = new DataPackage();
+                dp.SetBitmap(RandomAccessStreamReference.CreateFromStream(stream));
+                System.Windows.Forms.Clipboard.SetDataObject(null, false);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+            }
+            else if (!string.IsNullOrEmpty(item.Text))
+            {
+                System.Windows.Forms.Clipboard.SetText(item.Text);
+            }
+        }
+
+        private void ConfigureHistoryMax()
+        {
+            if (!HistoryPrompt.TryGetValue("设置历史条数", "输入要保留的条数：", HistoryCenter.MaxItems, out var value)) return;
+            HistoryCenter.MaxItems = value;
         }
 
         private void RenameTrustedDevice(ulong id)
@@ -453,6 +523,136 @@ namespace ClipboardSyncWin
             alias = textBox.Text;
             return true;
         }
+    }
+
+    static class HistoryPrompt
+    {
+        public static bool TryGetValue(string title, string label, int initialValue, out int value)
+        {
+            value = initialValue;
+            using var form = new Form();
+            using var textBox = new TextBox();
+            using var labelControl = new Label();
+            using var buttonOk = new Button();
+            using var buttonCancel = new Button();
+
+            form.Text = title;
+            form.FormBorderStyle = FormBorderStyle.FixedDialog;
+            form.StartPosition = FormStartPosition.CenterScreen;
+            form.MinimizeBox = false;
+            form.MaximizeBox = false;
+            form.ClientSize = new Size(360, 120);
+            form.AcceptButton = buttonOk;
+            form.CancelButton = buttonCancel;
+
+            labelControl.Text = label;
+            labelControl.SetBounds(12, 12, 336, 20);
+
+            textBox.Text = initialValue.ToString();
+            textBox.SetBounds(12, 36, 336, 24);
+
+            buttonOk.Text = "保存";
+            buttonOk.DialogResult = DialogResult.OK;
+            buttonOk.SetBounds(188, 74, 75, 28);
+
+            buttonCancel.Text = "取消";
+            buttonCancel.DialogResult = DialogResult.Cancel;
+            buttonCancel.SetBounds(273, 74, 75, 28);
+
+            form.Controls.AddRange(new Control[] { labelControl, textBox, buttonOk, buttonCancel });
+
+            var result = form.ShowDialog();
+            if (result != DialogResult.OK) return false;
+
+            return int.TryParse(textBox.Text, out value) && value > 0;
+        }
+    }
+
+    static class HistoryCenter
+    {
+        private static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClipboardSyncWin");
+        private static readonly string FilePath = Path.Combine(Dir, "history.json");
+        private static readonly List<HistoryItem> Items = new List<HistoryItem>();
+        private static int _max = 50;
+
+        public static int MaxItems
+        {
+            get => _max;
+            set { _max = Math.Max(1, value); Save(); }
+        }
+
+        public static List<HistoryItem> AllItems()
+        {
+            Load();
+            return Items.ToList();
+        }
+
+        public static void Clear()
+        {
+            Items.Clear();
+            Save();
+        }
+
+        public static void AddText(string text)
+        {
+            Add(new HistoryItem { Type = "text", Text = text });
+        }
+
+        public static void AddImage(byte[] bytes)
+        {
+            Add(new HistoryItem { Type = "image", Data = Convert.ToBase64String(bytes) });
+        }
+
+        private static void Add(HistoryItem item)
+        {
+            Load();
+            Items.Insert(0, item);
+            if (Items.Count > _max) Items.RemoveRange(_max, Items.Count - _max);
+            Save();
+        }
+
+        private static void Load()
+        {
+            if (Items.Count > 0) return;
+            try
+            {
+                if (!File.Exists(FilePath)) return;
+                var json = File.ReadAllText(FilePath, Encoding.UTF8);
+                var payload = System.Text.Json.JsonSerializer.Deserialize<HistoryPayload>(json);
+                if (payload != null)
+                {
+                    _max = payload.Max > 0 ? payload.Max : _max;
+                    Items.Clear();
+                    Items.AddRange(payload.Items ?? new List<HistoryItem>());
+                }
+            }
+            catch { }
+        }
+
+        private static void Save()
+        {
+            try
+            {
+                Directory.CreateDirectory(Dir);
+                var payload = new HistoryPayload { Max = _max, Items = Items };
+                var json = System.Text.Json.JsonSerializer.Serialize(payload);
+                File.WriteAllText(FilePath, json, Encoding.UTF8);
+            }
+            catch { }
+        }
+    }
+
+    class HistoryPayload
+    {
+        public int Max { get; set; }
+        public List<HistoryItem>? Items { get; set; }
+    }
+
+    class HistoryItem
+    {
+        public string Type { get; set; } = "text";
+        public string? Text { get; set; }
+        public string? Data { get; set; }
     }
 
     static class LogCenter
@@ -1180,6 +1380,7 @@ namespace ClipboardSyncWin
                 try
                 {
                     await UiDispatcher.RunAsync(() => Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp));
+                    HistoryCenter.AddText(text);
                     LoopState.MarkReceived(hash);
                 }
                 catch (Exception ex)
@@ -1200,6 +1401,7 @@ namespace ClipboardSyncWin
                 try
                 {
                     await UiDispatcher.RunAsync(() => Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp));
+                    HistoryCenter.AddImage(content);
                     LoopState.MarkReceived(hash);
                 }
                 catch (Exception ex)
