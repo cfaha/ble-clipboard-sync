@@ -29,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
 
+        let deviceIdItem = NSMenuItem(title: "本机ID: \(DeviceTrustCenter.format(SyncConfig.deviceId))", action: nil, keyEquivalent: "")
+        deviceIdItem.isEnabled = false
+        menu.addItem(deviceIdItem)
+
         trustedMenuItem = NSMenuItem(title: "受信任设备", action: nil, keyEquivalent: "")
         trustedMenu = NSMenu(title: "受信任设备")
         trustedMenuItem.submenu = trustedMenu

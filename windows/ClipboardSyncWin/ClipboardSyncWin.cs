@@ -272,6 +272,7 @@ namespace ClipboardSyncWin
             _syncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
             var menu = new ContextMenuStrip();
             _statusItem = new ToolStripMenuItem("Status: starting…") { Enabled = false };
+            var deviceIdItem = new ToolStripMenuItem($"本机ID: {SyncConfig.DeviceId:X16}") { Enabled = false };
             _trustedMenuItem = new ToolStripMenuItem("受信任设备");
             _trustedMenuItem.DropDownOpening += (_, __) => RefreshTrustedMenu();
             _autoStartItem = new ToolStripMenuItem("开机自启") { CheckOnClick = true };
@@ -285,6 +286,7 @@ namespace ClipboardSyncWin
             var quitItem = new ToolStripMenuItem("Quit");
             quitItem.Click += (_, __) => ExitThread();
             menu.Items.Add(_statusItem);
+            menu.Items.Add(deviceIdItem);
             menu.Items.Add(_trustedMenuItem);
             menu.Items.Add(_autoStartItem);
             menu.Items.Add(historyItem);
