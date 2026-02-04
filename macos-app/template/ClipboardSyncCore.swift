@@ -26,6 +26,11 @@ enum SyncConfig {
         return value
     }()
 
+    static var deviceName: String {
+        get { UserDefaults.standard.string(forKey: "BLEClipboardDeviceName") ?? Host.current().localizedName ?? "Mac" }
+        set { UserDefaults.standard.set(newValue, forKey: "BLEClipboardDeviceName") }
+    }
+
     // 16/24/32-byte key, base64 encoded. Must match on both devices.
     static let sharedKeyBase64 = "tKl/HZaBOndm38qZMtArGBgQa1ZuL26QER+jksZp9NY="
 
@@ -137,7 +142,7 @@ final class DeviceTrustCenter {
         let prompt = {
             let alert = NSAlert()
             alert.messageText = "允许此设备连接？"
-            alert.informativeText = "检测到新连接: \(centralId.uuidString)\n是否允许后续剪贴板同步？"
+            alert.informativeText = "本机ID: \(DeviceTrustCenter.format(SyncConfig.deviceId))\n对端ID(临时): \(centralId.uuidString)\n是否允许后续剪贴板同步？"
             alert.addButton(withTitle: "允许")
             alert.addButton(withTitle: "拒绝")
             let response = alert.runModal()
@@ -479,9 +484,10 @@ final class ClipboardPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     private func startAdvertising() {
-        LogCenter.shared.log("Start advertising BLEClipboardSync")
+        let name = "BLEClipboardSync-\(SyncConfig.deviceName)"
+        LogCenter.shared.log("Start advertising \(name)")
         peripheralManager.startAdvertising([
-            CBAdvertisementDataLocalNameKey: "BLEClipboardSync",
+            CBAdvertisementDataLocalNameKey: name,
             CBAdvertisementDataServiceUUIDsKey: [serviceUUID]
         ])
     }

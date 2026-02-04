@@ -273,6 +273,8 @@ namespace ClipboardSyncWin
             var menu = new ContextMenuStrip();
             _statusItem = new ToolStripMenuItem("Status: starting…") { Enabled = false };
             var deviceIdItem = new ToolStripMenuItem($"本机ID: {SyncConfig.DeviceId:X16}") { Enabled = false };
+            var deviceNameItem = new ToolStripMenuItem($"本机名称: {SyncConfig.DeviceName}");
+            deviceNameItem.Click += (_, __) => EditDeviceName(deviceNameItem);
             _trustedMenuItem = new ToolStripMenuItem("受信任设备");
             _trustedMenuItem.DropDownOpening += (_, __) => RefreshTrustedMenu();
             _autoStartItem = new ToolStripMenuItem("开机自启") { CheckOnClick = true };
@@ -287,6 +289,7 @@ namespace ClipboardSyncWin
             quitItem.Click += (_, __) => ExitThread();
             menu.Items.Add(_statusItem);
             menu.Items.Add(deviceIdItem);
+            menu.Items.Add(deviceNameItem);
             menu.Items.Add(_trustedMenuItem);
             menu.Items.Add(_autoStartItem);
             menu.Items.Add(historyItem);
@@ -470,6 +473,46 @@ namespace ClipboardSyncWin
             catch (Exception ex)
             {
                 MessageBox.Show($"日志导出失败: {ex.Message}", "导出日志", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void EditDeviceName(ToolStripMenuItem item)
+        {
+            using var input = new TextBox();
+            using var label = new Label();
+            using var ok = new Button();
+            using var cancel = new Button();
+            using var form = new Form();
+
+            form.Text = "本机名称";
+            form.FormBorderStyle = FormBorderStyle.FixedDialog;
+            form.StartPosition = FormStartPosition.CenterScreen;
+            form.MinimizeBox = false;
+            form.MaximizeBox = false;
+            form.ClientSize = new Size(360, 120);
+
+            label.Text = "设置用于识别的设备名称：";
+            label.SetBounds(12, 12, 336, 20);
+
+            input.Text = SyncConfig.DeviceName;
+            input.SetBounds(12, 36, 336, 24);
+
+            ok.Text = "保存";
+            ok.DialogResult = DialogResult.OK;
+            ok.SetBounds(188, 74, 75, 28);
+
+            cancel.Text = "取消";
+            cancel.DialogResult = DialogResult.Cancel;
+            cancel.SetBounds(273, 74, 75, 28);
+
+            form.Controls.AddRange(new Control[] { label, input, ok, cancel });
+            form.AcceptButton = ok;
+            form.CancelButton = cancel;
+
+            if (form.ShowDialog() == DialogResult.OK)
+            {
+                SyncConfig.DeviceName = input.Text;
+                item.Text = $"本机名称: {SyncConfig.DeviceName}";
             }
         }
 
@@ -884,6 +927,11 @@ namespace ClipboardSyncWin
     static class SyncConfig
     {
         public static ulong DeviceId => DeviceIdProvider.GetOrCreate();
+        public static string DeviceName
+        {
+            get => Properties.Settings.Default.DeviceName ?? Environment.MachineName;
+            set { Properties.Settings.Default.DeviceName = value; Properties.Settings.Default.Save(); }
+        }
         public const string SharedKeyBase64 = "tKl/HZaBOndm38qZMtArGBgQa1ZuL26QER+jksZp9NY=";
         public const int CompressionThreshold = 256;
     }

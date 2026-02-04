@@ -32,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let deviceIdItem = NSMenuItem(title: "本机ID: \(DeviceTrustCenter.format(SyncConfig.deviceId))", action: nil, keyEquivalent: "")
         deviceIdItem.isEnabled = false
         menu.addItem(deviceIdItem)
+        let deviceNameItem = NSMenuItem(title: "本机名称: \(SyncConfig.deviceName)", action: #selector(editDeviceName), keyEquivalent: "")
+        menu.addItem(deviceNameItem)
 
         trustedMenuItem = NSMenuItem(title: "受信任设备", action: nil, keyEquivalent: "")
         trustedMenu = NSMenu(title: "受信任设备")
@@ -261,6 +263,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if panel.runModal() == .OK, let url = panel.url {
             showProgressPanel(name: url.lastPathComponent)
             peripheral.sendFile(url)
+        }
+    }
+
+    @objc private func editDeviceName() {
+        let alert = NSAlert()
+        alert.messageText = "本机名称"
+        alert.informativeText = "设置用于识别的设备名称："
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        input.stringValue = SyncConfig.deviceName
+        alert.accessoryView = input
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        let resp = alert.runModal()
+        if resp == .alertFirstButtonReturn {
+            SyncConfig.deviceName = input.stringValue
         }
     }
 
