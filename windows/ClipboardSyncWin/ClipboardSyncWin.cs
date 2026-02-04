@@ -66,7 +66,7 @@ namespace ClipboardSyncWin
                 LogCenter.Log($"Task exception: {e.Exception}");
             };
 
-            LogCenter.Log("App started [v1.0.4-20260202-1134]");
+            LogCenter.Log("App started [v1.0.19-20260204-1930]");
             AppStatus.Initialize();
             SendFramesAsyncDelegate = SendFramesAsync;
             _ = StartScanAsync();

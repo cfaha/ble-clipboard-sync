@@ -1,6 +1,6 @@
 import AppKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     private var statusItem: NSStatusItem!
     private var statusMenuItem: NSMenuItem!
     private var trustedMenuItem: NSMenuItem!
@@ -18,6 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var progressCancelButton: NSButton?
     private var isShowingProgress = false
     private var lastStatus: String = ""
+
+    private var historyPanel: NSPanel?
+    private var historyTable: NSTableView?
+    private var historySearch: NSSearchField?
+    private var historyItems: [[String: String]] = []
+    private var historyFiltered: [Int] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -48,9 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sendFileItem = NSMenuItem(title: "发送文件…", action: #selector(sendFileManually), keyEquivalent: "")
         menu.addItem(sendFileItem)
 
-        historyMenuItem = NSMenuItem(title: "历史剪贴板", action: nil, keyEquivalent: "")
-        historyMenu = NSMenu(title: "历史剪贴板")
-        historyMenuItem.submenu = historyMenu
+        historyMenuItem = NSMenuItem(title: "历史剪贴板…", action: #selector(openHistoryWindow), keyEquivalent: "")
         menu.addItem(historyMenuItem)
 
         let speedTestMenu = NSMenuItem(title: "测速", action: nil, keyEquivalent: "")
@@ -100,9 +104,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         HistoryCenter.shared.onChange = { [weak self] in
-            self?.refreshHistoryMenu()
+            self?.reloadHistory()
         }
-        refreshHistoryMenu()
+        reloadHistory()
 
         peripheral = ClipboardPeripheral()
         peripheral?.onProgress = { [weak self] name, progress, sent, total in
@@ -185,31 +189,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func refreshHistoryMenu() {
-        historyMenu.removeAllItems()
-        let items = HistoryCenter.shared.allItems()
-        if items.isEmpty {
-            historyMenu.addItem(NSMenuItem(title: "(空)", action: nil, keyEquivalent: ""))
-            return
-        }
-        for (idx, item) in items.enumerated() {
-            let type = item["type"] ?? "text"
-            let title: String
-            if type == "image" {
-                title = "图片 #\(idx + 1)"
-            } else {
-                let text = item["text"] ?? ""
-                title = text.count > 30 ? String(text.prefix(30)) + "…" : text
+    private func reloadHistory() {
+        historyItems = HistoryCenter.shared.allItems()
+        applyHistoryFilter()
+    }
+
+    private func applyHistoryFilter() {
+        let query = historySearch?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if query.isEmpty {
+            historyFiltered = Array(historyItems.indices)
+        } else {
+            historyFiltered = historyItems.indices.filter { idx in
+                let item = historyItems[idx]
+                if item["type"] == "image" { return false }
+                return (item["text"] ?? "").lowercased().contains(query)
             }
-            let menuItem = NSMenuItem(title: title, action: #selector(selectHistoryItem(_:)), keyEquivalent: "")
-            menuItem.representedObject = idx
-            historyMenu.addItem(menuItem)
         }
-        historyMenu.addItem(NSMenuItem.separator())
-        let config = NSMenuItem(title: "设置保留条数…", action: #selector(configureHistoryMax), keyEquivalent: "")
-        historyMenu.addItem(config)
-        let clear = NSMenuItem(title: "清空历史", action: #selector(clearHistory), keyEquivalent: "")
-        historyMenu.addItem(clear)
+        historyTable?.reloadData()
     }
 
     @objc private func renameTrustedDevice(_ sender: NSMenuItem) {
@@ -339,17 +335,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func selectHistoryItem(_ sender: NSMenuItem) {
         guard let idx = sender.representedObject as? Int else { return }
-        let items = HistoryCenter.shared.allItems()
-        guard idx < items.count else { return }
-        let item = items[idx]
-        let type = item["type"] ?? "text"
-        if type == "image", let b64 = item["data"], let data = Data(base64Encoded: b64), let image = NSImage(data: data) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.writeObjects([image])
-        } else if let text = item["text"] {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-        }
+        guard idx < historyItems.count else { return }
+        restoreHistoryItem(historyItems[idx])
     }
 
     @objc private func configureHistoryMax() {
@@ -364,11 +351,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let resp = alert.runModal()
         if resp == .alertFirstButtonReturn, let value = Int(input.stringValue), value > 0 {
             HistoryCenter.shared.maxItems = value
+            reloadHistory()
         }
     }
 
     @objc private func clearHistory() {
         HistoryCenter.shared.clear()
+        reloadHistory()
+    }
+
+    @objc private func openHistoryWindow() {
+        showHistoryWindow()
     }
 
     @objc private func speedTest1m() { peripheral?.startSpeedTest(bytes: 1 * 1024 * 1024) }
@@ -376,6 +369,93 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func speedTest50m() { peripheral?.startSpeedTest(bytes: 50 * 1024 * 1024) }
     @objc private func speedTest100m() { peripheral?.startSpeedTest(bytes: 100 * 1024 * 1024) }
     @objc private func speedTest500m() { peripheral?.startSpeedTest(bytes: 500 * 1024 * 1024) }
+
+    private func showHistoryWindow() {
+        if historyPanel == nil {
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+                                styleMask: [.titled, .closable, .resizable],
+                                backing: .buffered,
+                                defer: false)
+            panel.title = "历史剪贴板"
+
+            let search = NSSearchField(frame: NSRect(x: 20, y: 380, width: 300, height: 24))
+            search.placeholderString = "搜索文本…"
+            search.delegate = self
+
+            let table = NSTableView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+            table.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("col")))
+            table.headerView = nil
+            table.delegate = self
+            table.dataSource = self
+            table.rowHeight = 22
+
+            let scroll = NSScrollView(frame: NSRect(x: 20, y: 60, width: 480, height: 300))
+            scroll.documentView = table
+            scroll.hasVerticalScroller = true
+
+            let btnRestore = NSButton(title: "恢复", target: self, action: #selector(restoreSelectedHistory))
+            btnRestore.frame = NSRect(x: 20, y: 20, width: 80, height: 28)
+            let btnClear = NSButton(title: "清空历史", target: self, action: #selector(clearHistory))
+            btnClear.frame = NSRect(x: 110, y: 20, width: 100, height: 28)
+            let btnConfig = NSButton(title: "设置条数", target: self, action: #selector(configureHistoryMax))
+            btnConfig.frame = NSRect(x: 220, y: 20, width: 100, height: 28)
+
+            panel.contentView?.addSubview(search)
+            panel.contentView?.addSubview(scroll)
+            panel.contentView?.addSubview(btnRestore)
+            panel.contentView?.addSubview(btnClear)
+            panel.contentView?.addSubview(btnConfig)
+
+            historyPanel = panel
+            historyTable = table
+            historySearch = search
+        }
+        reloadHistory()
+        historyPanel?.center()
+        historyPanel?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func restoreSelectedHistory() {
+        guard let table = historyTable else { return }
+        let row = table.selectedRow
+        guard row >= 0, row < historyFiltered.count else { return }
+        let idx = historyFiltered[row]
+        restoreHistoryItem(historyItems[idx])
+    }
+
+    private func restoreHistoryItem(_ item: [String: String]) {
+        let type = item["type"] ?? "text"
+        if type == "image", let b64 = item["data"], let data = Data(base64Encoded: b64), let image = NSImage(data: data) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([image])
+        } else if let text = item["text"] {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        return historyFiltered.count
+    }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let idx = historyFiltered[row]
+        let item = historyItems[idx]
+        let type = item["type"] ?? "text"
+        let text: String
+        if type == "image" {
+            text = "图片 #\(row + 1)"
+        } else {
+            let t = item["text"] ?? ""
+            text = t.count > 60 ? String(t.prefix(60)) + "…" : t
+        }
+        let cell = NSTextField(labelWithString: text)
+        return cell
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        applyHistoryFilter()
+    }
 
     @objc private func removeTrustedDevice(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UInt64 else { return }
